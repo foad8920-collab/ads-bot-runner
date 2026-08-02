@@ -117,7 +117,7 @@ async function downloadImage(imageUrl) {
     return imagePath;
 }
 
-// 🎯 دالة فتح مربع النشر (تمت إطالة مدة الانتظار)
+// 🎯 دالة فتح مربع النشر
 async function openPostBox(page) {
     await logToDashboard(`⏳ إعطاء فيسبوك مهلة 20 ثانية لبناء الأزرار ومربع النشر...`, 'info');
     await sleep(20000); 
@@ -257,7 +257,7 @@ async function pasteTextWithLines(page, postText) {
     }
 }
 
-// 🚀 دالة النشر الفعلي للمجموعة (تمت إطالة مدة الفترات لزيادة الأمان)
+// 🚀 دالة النشر الفعلي للمجموعة
 async function publishToGroup(page, group, post, imagePath) {
     await logToDashboard(`📢 فتح رابط مجموعة البوت: ${group.name} | الرابط: ${group.url}`, 'info');
     
@@ -602,7 +602,7 @@ async function processOnePostBot2(initialPostData) {
                 try { currentRemaining = JSON.parse(checkData.groups_json || '[]'); } catch(e){}
 
                 if (currentRemaining.length > 0 || botGroup) {
-                    // ⏳ إطالة استراحة الأمان بين المجموعات إلى (من 7 إلى 10 دقائق) لحماية الحساب من الحظر
+                    // ⏳ استراحة أمان لحماية الحساب من 7 إلى 10 دقائق
                     const longBreak = randomDelay(420, 600);
                     await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
@@ -655,12 +655,12 @@ async function processOnePostBot2(initialPostData) {
     }
 }
 
-// 🛠️ إعادة ضبط الإعلانات العالقة للـ bot2 عند بدء التشغيل
+// 🛠️ إعادة ضبط الإعلانات العالقة للـ bot2 (بدون مسح القروب المسحوب)
 async function resetStuckBot2Posts() {
     await logToDashboard(`🔄 جاري فحص الإعلانات العالقة (processing) للبوت الثاني لإعادتها إلى (running)...`, 'info');
     const { error } = await supabase
         .from('publish_queue')
-        .update({ bot2_status: 'running', bot2_group: null, ai_final_text2: null })
+        .update({ bot2_status: 'running' })
         .eq('bot2_status', 'processing');
 
     if (error) {
@@ -668,41 +668,56 @@ async function resetStuckBot2Posts() {
     }
 }
 
-// 🌐 🌟 الحلقة التكرارية للبوت الثاني (سحابية ومتوافقة مع GitHub Actions)
+// 🌐 🌟 المحرك الذكي للبوت الثاني (يفحص القروب الرئيسي مباشرة بدون تعقيد)
 async function startBot2Engine() {
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثاني الذاتي بنجاح...`, 'success');
     await resetStuckBot2Posts();
 
     while (true) {
         try {
-            // 🎯 البحث المباشر عن أي إعلان حالته running أو pending للبوت الثاني
+            // 🎯 جلب كافة الإعلانات التي لم تُوقف
             const { data, error } = await supabase
                 .from('publish_queue')
                 .select('*')
-                .or('bot2_status.eq.running,bot2_status.eq.pending')
-                .order('id', { ascending: true })
-                .limit(1);
+                .neq('bot2_status', 'stopped')
+                .order('id', { ascending: true });
 
             if (error) {
                 await sleep(10000);
                 continue;
             }
 
-            // 🛑 إذا كان الطابور فارغاً ولا توجد إعلانات تنتظر النشر، نغلق السكربت بنجاح فوراً
-            if (!data || data.length === 0) {
-                await logToDashboard(`🎉 اكتملت جميع المهام في الطابور، تم إنهاء الجلسة السحابية بنجاح!`, 'success');
-                console.log("✅ لا توجد إعلانات قيد الانتظار، جاري إغلاق السكربت...");
-                process.exit(0);
+            // 🔥 التعديل الجذري: الفحص المباشر لـ groups_json و bot2_group
+            let postToRun = null;
+            if (data && data.length > 0) {
+                for (const post of data) {
+                    let groups = [];
+                    try { groups = JSON.parse(post.groups_json || '[]'); } catch(e){}
+
+                    let hasBotGroup = false;
+                    try { hasBotGroup = post.bot2_group && JSON.parse(post.bot2_group); } catch(e){}
+
+                    // 💡 إذا وجدنا مجموعات في القروب الرئيسي أو مجموعة معلقة، ابدأ النشر فوراً!
+                    if (groups.length > 0 || hasBotGroup) {
+                        postToRun = post;
+                        break;
+                    }
+                }
             }
 
-            const postToRun = data[0];
+            // 🛑 إذا كانت كل القروبات في كل الإعلانات فارغة تماماً، نغلق السلسلة
+            if (!postToRun) {
+                await logToDashboard(`🎉 اكتملت جميع المهام في الطابور، تم إنهاء الجلسة السحابية بنجاح!`, 'success');
+                console.log("✅ لا توجد إعلانات تحتوي على مجموعات قيد الانتظار، جاري إغلاق السكربت...");
+                process.exit(0);
+            }
 
             // تعيين الحالة إلى processing لمنع التكرار
             await supabase.from('publish_queue').update({ bot2_status: 'processing' }).eq('id', postToRun.id);
 
             await processOnePostBot2(postToRun);
 
-            // تعيين الحالة إلى stopped بعد الانتهاء
+            // تعيين الحالة إلى stopped بعد الانتهاء الكامل
             await supabase.from('publish_queue').update({ bot2_status: 'stopped' }).eq('id', postToRun.id);
 
         } catch (err) {
