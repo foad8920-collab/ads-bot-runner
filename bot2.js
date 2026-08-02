@@ -620,7 +620,7 @@ async function processOnePostBot2(initialPostData) {
                 }
 
                 if (currentRemaining.length > 0 || botGroup) {
-                    const longBreak = randomDelay(420, 600);
+                    const longBreak = randomDelay(180, 300); // استراحة أمان من 3 إلى 5 دقائق
                     await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
                 }
