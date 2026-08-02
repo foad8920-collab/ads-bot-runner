@@ -398,7 +398,6 @@ async function publishToGroup(page, group, post, imagePath) {
 
 // 🔄 دالة معالجة إعلان واحد للبوت الثاني
 async function processOnePostBot2(initialPostData) {
-    // 🍪 جلب الكوكيز من Supabase مباشرة
     const cookiesRaw = await getSetting('FB_COOKIES_BOT2');
     if (!cookiesRaw) {
         await logToDashboard(`❌ ملف الكوكيز للبوت الثاني غير موجود في جدول system_settings!`, 'error');
@@ -487,13 +486,11 @@ async function processOnePostBot2(initialPostData) {
 
             if (!freshData) break;
 
-            // 🛑 🔥 زر التوقف للبوت الثاني
             if (freshData.bot2_status === 'stopped') {
                 await logToDashboard(`🛑 تم إيقاف البوت الثاني يدوياً بطلب من المستخدم!`, 'info');
                 break;
             }
 
-            // ⏸️ زر الإيقاف المؤقت (Pause)
             while (freshData.bot2_status === 'paused') {
                 await logToDashboard(`⏸️ البوت الثاني في حالة إيقاف مؤقت (Paused)، يرجى الانتظار...`, 'info');
                 await sleep(10000);
@@ -512,7 +509,6 @@ async function processOnePostBot2(initialPostData) {
 
             if (freshData.bot2_status === 'stopped') break;
 
-            // ⏭️ زر تخطي المجموعة الحالية (Skip Group)
             if (freshData.skip_current_group === true) {
                 await logToDashboard(`⏭️ تم طلب تخطي المجموعة الحالية بطلب من المستخدم، جاري الانتقال للتالي...`, 'info');
                 await supabase.from('publish_queue').update({
@@ -523,15 +519,20 @@ async function processOnePostBot2(initialPostData) {
                 continue;
             }
 
+            // 🔹 قراءة مصفوفة المجموعات بدقة وذكاء يمنع أخطاء JSON.parse 🔹
             let groups = [];
-            try {
-                groups = JSON.parse(freshData.groups_json || '[]');
-            } catch (e) {}
+            if (Array.isArray(freshData.groups_json)) {
+                groups = freshData.groups_json;
+            } else if (typeof freshData.groups_json === 'string') {
+                try { groups = JSON.parse(freshData.groups_json || '[]'); } catch (e) {}
+            }
 
             let botGroup = null;
-            try {
-                botGroup = freshData.bot2_group ? JSON.parse(freshData.bot2_group) : null;
-            } catch (e) {}
+            if (typeof freshData.bot2_group === 'object' && freshData.bot2_group !== null) {
+                botGroup = freshData.bot2_group;
+            } else if (typeof freshData.bot2_group === 'string') {
+                try { botGroup = freshData.bot2_group ? JSON.parse(freshData.bot2_group) : null; } catch (e) {}
+            }
 
             if (groups.length === 0 && !botGroup) {
                 const { data: finalCheck } = await supabase
@@ -599,10 +600,13 @@ async function processOnePostBot2(initialPostData) {
 
                 const { data: checkData } = await supabase.from('publish_queue').select('groups_json').eq('id', initialPostData.id).single();
                 let currentRemaining = [];
-                try { currentRemaining = JSON.parse(checkData.groups_json || '[]'); } catch(e){}
+                if (Array.isArray(checkData?.groups_json)) {
+                    currentRemaining = checkData.groups_json;
+                } else if (typeof checkData?.groups_json === 'string') {
+                    try { currentRemaining = JSON.parse(checkData.groups_json || '[]'); } catch(e){}
+                }
 
                 if (currentRemaining.length > 0 || botGroup) {
-                    // ⏳ استراحة أمان لحماية الحساب من 7 إلى 10 دقائق
                     const longBreak = randomDelay(420, 600);
                     await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
@@ -655,7 +659,7 @@ async function processOnePostBot2(initialPostData) {
     }
 }
 
-// 🛠️ إعادة ضبط الإعلانات العالقة للـ bot2 (بدون مسح القروب المسحوب)
+// 🛠️ إعادة ضبط الإعلانات العالقة للـ bot2
 async function resetStuckBot2Posts() {
     await logToDashboard(`🔄 جاري فحص الإعلانات العالقة (processing) للبوت الثاني لإعادتها إلى (running)...`, 'info');
     const { error } = await supabase
@@ -668,36 +672,43 @@ async function resetStuckBot2Posts() {
     }
 }
 
-// 🌐 🌟 المحرك الذكي للبوت الثاني (يفحص القروب الرئيسي مباشرة بدون تعقيد)
+// 🌐 🌟 المحرك الذكي للبوت الثاني (جلب عام لجميع الأسطر بدون أي تصفية خاطئة)
 async function startBot2Engine() {
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثاني الذاتي بنجاح...`, 'success');
     await resetStuckBot2Posts();
 
     while (true) {
         try {
-            // 🎯 جلب كافة الإعلانات التي لم تُوقف
+            // 🎯 جلب كافة الإعلانات المسجلة في الطابور بدقة
             const { data, error } = await supabase
                 .from('publish_queue')
                 .select('*')
-                .neq('bot2_status', 'stopped')
                 .order('id', { ascending: true });
 
             if (error) {
+                await logToDashboard(`⚠️ خطأ قراءة الطابور: ${error.message}`, 'error');
                 await sleep(10000);
                 continue;
             }
 
-            // 🔥 التعديل الجذري: الفحص المباشر لـ groups_json و bot2_group
             let postToRun = null;
             if (data && data.length > 0) {
                 for (const post of data) {
                     let groups = [];
-                    try { groups = JSON.parse(post.groups_json || '[]'); } catch(e){}
+                    if (Array.isArray(post.groups_json)) {
+                        groups = post.groups_json;
+                    } else if (typeof post.groups_json === 'string') {
+                        try { groups = JSON.parse(post.groups_json || '[]'); } catch(e){}
+                    }
 
                     let hasBotGroup = false;
-                    try { hasBotGroup = post.bot2_group && JSON.parse(post.bot2_group); } catch(e){}
+                    if (typeof post.bot2_group === 'object' && post.bot2_group !== null) {
+                        hasBotGroup = true;
+                    } else if (typeof post.bot2_group === 'string') {
+                        try { hasBotGroup = !!JSON.parse(post.bot2_group); } catch(e){}
+                    }
 
-                    // 💡 إذا وجدنا مجموعات في القروب الرئيسي أو مجموعة معلقة، ابدأ النشر فوراً!
+                    // 💡 الشرط الصريح والوحيد: هل توجد مجموعات للنشر في القروب الرئيسي أو قروب البوت؟
                     if (groups.length > 0 || hasBotGroup) {
                         postToRun = post;
                         break;
@@ -705,19 +716,16 @@ async function startBot2Engine() {
                 }
             }
 
-            // 🛑 إذا كانت كل القروبات في كل الإعلانات فارغة تماماً، نغلق السلسلة
             if (!postToRun) {
                 await logToDashboard(`🎉 اكتملت جميع المهام في الطابور، تم إنهاء الجلسة السحابية بنجاح!`, 'success');
                 console.log("✅ لا توجد إعلانات تحتوي على مجموعات قيد الانتظار، جاري إغلاق السكربت...");
                 process.exit(0);
             }
 
-            // تعيين الحالة إلى processing لمنع التكرار
             await supabase.from('publish_queue').update({ bot2_status: 'processing' }).eq('id', postToRun.id);
 
             await processOnePostBot2(postToRun);
 
-            // تعيين الحالة إلى stopped بعد الانتهاء الكامل
             await supabase.from('publish_queue').update({ bot2_status: 'stopped' }).eq('id', postToRun.id);
 
         } catch (err) {
