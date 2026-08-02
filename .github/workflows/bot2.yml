@@ -19,7 +19,7 @@ jobs:
       - name: 📦 تثبيت المكتبات (Dependencies)
         run: |
           npm init -y
-          npm install playwright @supabase/supabase-js axios ws
+          npm install playwright @supabase/supabase-js axios ws express
 
       - name: 🌐 تثبيت متصفح Chromium الخاص بـ Playwright
         run: |
