@@ -667,7 +667,7 @@ async function resetStuckBot2Posts() {
     }
 }
 
-// 🌐 🌟 الحلقة التكرارية الذاتية والمستقلة للبوت الثاني (Standalone Engine)
+// 🌐 🌟 الحلقة التكرارية للبوت الثاني (سحابية ومتوافقة مع GitHub Actions)
 async function startBot2Engine() {
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثاني الذاتي بنجاح...`, 'success');
     await resetStuckBot2Posts();
@@ -687,9 +687,11 @@ async function startBot2Engine() {
                 continue;
             }
 
+            // 🛑 إذا كان الطابور فارغاً ولا توجد إعلانات تنتظر النشر، نغلق السكربت بنجاح فوراً
             if (!data || data.length === 0) {
-                await sleep(15000); // الانتظار 15 ثانية وإعادة الفحص
-                continue;
+                await logToDashboard(`🎉 اكتملت جميع المهام في الطابور، تم إنهاء الجلسة السحابية بنجاح!`, 'success');
+                console.log("✅ لا توجد إعلانات قيد الانتظار، جاري إغلاق السكربت...");
+                process.exit(0);
             }
 
             const postToRun = data[0];
@@ -708,7 +710,6 @@ async function startBot2Engine() {
         }
     }
 }
-
 // 🔌 لتصدير الدالة أو تشغيلها فوراً عند فتح الملف مباشرة
 module.exports = processOnePostBot2;
 
