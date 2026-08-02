@@ -1,7 +1,7 @@
 name: Run Facebook Bot 2
 
 on:
-  workflow_dispatch: # يتيح التشغيل اليدوي أو عن طريق الـ API من التطبيق/Supabase
+  workflow_dispatch:
 
 jobs:
   run-bot2:
@@ -14,12 +14,12 @@ jobs:
       - name: 🟢 إعداد بيئة Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: 📦 تثبيت المكتبات (Dependencies)
         run: |
           npm init -y
-          npm install playwright @supabase/supabase-js axios
+          npm install playwright @supabase/supabase-js axios ws
 
       - name: 🌐 تثبيت متصفح Chromium الخاص بـ Playwright
         run: |
