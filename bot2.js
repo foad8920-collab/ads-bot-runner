@@ -425,7 +425,10 @@ async function processOnePostBot2(initialPostData) {
         }
     }
 
-    const browser = await chromium.launch({
+    // 🌐 جلب رابط البروكسي من جدول system_settings إن وجد
+    const proxyUrl = await getSetting('PROXY_URL');
+
+    const launchOptions = {
         headless: true,
         args: [
             '--no-sandbox',
@@ -448,10 +451,20 @@ async function processOnePostBot2(initialPostData) {
             '--disable-infobars',
             '--hide-scrollbars'
         ]
-    });
+    };
 
+    if (proxyUrl && proxyUrl.trim() !== '') {
+        launchOptions.proxy = { server: proxyUrl.trim() };
+        await logToDashboard(`🌐 تم دمج وتفعيل البروكسي بنجاح: ${proxyUrl}`, 'success');
+    }
+
+    const browser = await chromium.launch(launchOptions);
+
+    // 🎯 محاكاة التوقيت المحلي واللغة (الشرق الأوسط / الرياض) لحماية الحساب من الـ Checkpoint
     const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
+        timezoneId: 'Asia/Riyadh',
+        locale: 'ar-SA',
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write']
     });
@@ -672,14 +685,13 @@ async function resetStuckBot2Posts() {
     }
 }
 
-// 🌐 🌟 المحرك الذكي للبوت الثاني (جلب عام لجميع الأسطر بدون أي تصفية خاطئة)
+// 🌐 🌟 المحرك الذكي للبوت الثاني
 async function startBot2Engine() {
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثاني الذاتي بنجاح...`, 'success');
     await resetStuckBot2Posts();
 
     while (true) {
         try {
-            // 🎯 جلب كافة الإعلانات المسجلة في الطابور بدقة
             const { data, error } = await supabase
                 .from('publish_queue')
                 .select('*')
@@ -708,7 +720,6 @@ async function startBot2Engine() {
                         try { hasBotGroup = !!JSON.parse(post.bot2_group); } catch(e){}
                     }
 
-                    // 💡 الشرط الصريح والوحيد: هل توجد مجموعات للنشر في القروب الرئيسي أو قروب البوت؟
                     if (groups.length > 0 || hasBotGroup) {
                         postToRun = post;
                         break;
