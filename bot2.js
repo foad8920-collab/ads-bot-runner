@@ -117,10 +117,10 @@ async function downloadImage(imageUrl) {
     return imagePath;
 }
 
-// 🎯 دالة فتح مربع النشر
+// 🎯 دالة فتح مربع النشر (تمت إطالة مدة الانتظار)
 async function openPostBox(page) {
-    await logToDashboard(`⏳ إعطاء فيسبوك مهلة 15 ثانية لبناء الأزرار ومربع النشر...`, 'info');
-    await sleep(15000); 
+    await logToDashboard(`⏳ إعطاء فيسبوك مهلة 20 ثانية لبناء الأزرار ومربع النشر...`, 'info');
+    await sleep(20000); 
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
@@ -134,9 +134,9 @@ async function openPostBox(page) {
         try {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
-                await tabBtn.click({ timeout: 4000, force: true });
-                await logToDashboard(`🔄 تم التبديل لتبويب (مناقشة)، ننتظر 15 ثانية لاستقرار التبويب...`, 'info');
-                await sleep(15000); 
+                await tabBtn.click({ timeout: 5000, force: true });
+                await logToDashboard(`🔄 تم التبديل لتبويب (مناقشة)، ننتظر 20 ثانية لاستقرار التبويب...`, 'info');
+                await sleep(20000); 
                 break;
             }
         } catch (e) {}
@@ -175,17 +175,17 @@ async function openPostBox(page) {
         try {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
-                await element.click({ timeout: 5000, force: true });
-                await logToDashboard(`⏳ تم النقر لفتح نافذة المنشور، ننتظر 15 ثانية لتفتح النافذة براحتها...`, 'info');
-                await sleep(15000); 
+                await element.click({ timeout: 6000, force: true });
+                await logToDashboard(`⏳ تم النقر لفتح نافذة المنشور، ننتظر 20 ثانية لتفتح النافذة براحتها...`, 'info');
+                await sleep(20000); 
 
                 const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة'];
                 for (const cBtn of confirmBtns) {
                     try {
                         const btn = page.locator(cBtn).first();
                         if (await btn.count() > 0 && await btn.isVisible()) {
-                            await btn.click({ timeout: 2000, force: true });
-                            await sleep(2000);
+                            await btn.click({ timeout: 3000, force: true });
+                            await sleep(3000);
                         }
                     } catch(e){}
                 }
@@ -200,7 +200,7 @@ async function openPostBox(page) {
 
 // 📝 دالة لصق النص
 async function pasteTextWithLines(page, postText) {
-    await sleep(5000); 
+    await sleep(6000); 
 
     const targetSelectors = [
         'div[role="dialog"] div[role="textbox"]',
@@ -228,8 +228,8 @@ async function pasteTextWithLines(page, postText) {
 
     if (textbox) {
         try {
-            await textbox.click({ timeout: 5000, force: true });
-            await sleep(2000); 
+            await textbox.click({ timeout: 6000, force: true });
+            await sleep(3000); 
             await page.evaluate(async (text) => {
                 await navigator.clipboard.writeText(text);
             }, postText);
@@ -249,7 +249,7 @@ async function pasteTextWithLines(page, postText) {
                 activeInput.click();
             }
         });
-        await sleep(2000);
+        await sleep(3000);
         await page.keyboard.insertText(postText);
         await logToDashboard(`✅ تم إدخال النص بطريقة البديلة (insertText)`, 'success');
     } catch(e) {
@@ -257,14 +257,14 @@ async function pasteTextWithLines(page, postText) {
     }
 }
 
-// 🚀 دالة النشر الفعلي للمجموعة
+// 🚀 دالة النشر الفعلي للمجموعة (تمت إطالة مدة الفترات لزيادة الأمان)
 async function publishToGroup(page, group, post, imagePath) {
     await logToDashboard(`📢 فتح رابط مجموعة البوت: ${group.name} | الرابط: ${group.url}`, 'info');
     
     await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     
-    await logToDashboard(`⏳ تم تحميل الصفحة، ننتظر 40 ثانية كاملة لاستقرار عناصر الصفحة وبناء السكربتات...`, 'info');
-    await sleep(40000); 
+    await logToDashboard(`⏳ تم تحميل الصفحة، ننتظر 45 ثانية كاملة لاستقرار عناصر الصفحة وبناء السكربتات...`, 'info');
+    await sleep(45000); 
 
     if (page.url().includes('login') || page.url().includes('checkpoint')) {
         throw new Error('انتهت جلسة تسجيل الدخول أو يوجد Checkpoint للحساب');
@@ -273,7 +273,7 @@ async function publishToGroup(page, group, post, imagePath) {
     const opened = await openPostBox(page);
     if (!opened) throw new Error('لم يتم العثور على مربع النشر');
 
-    await sleep(randomDelay(3, 5)); 
+    await sleep(randomDelay(5, 10)); 
 
     if (imagePath) {
         const imageTriggerSelectors = [
@@ -290,8 +290,8 @@ async function publishToGroup(page, group, post, imagePath) {
             try {
                 const trigElement = page.locator(trigSel).first();
                 if (await trigElement.count() > 0 && await trigElement.isVisible()) {
-                    await trigElement.click({ timeout: 5000, force: true });
-                    await sleep(4000); 
+                    await trigElement.click({ timeout: 6000, force: true });
+                    await sleep(5000); 
                     break;
                 }
             } catch (e) {}
@@ -315,22 +315,22 @@ async function publishToGroup(page, group, post, imagePath) {
 
         if (isFileInjected) {
             const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov');
-            const waitTime = isVideoFile ? 60000 : 25000;
+            const waitTime = isVideoFile ? 75000 : 30000;
 
             await logToDashboard(`🖼️ تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف...`, 'success');
             await sleep(waitTime);
 
             try {
-                await page.waitForSelector('img[src*="blob:"], video, [aria-label*="إزالة"], [aria-label*="Remove"]', { timeout: 25000 });
+                await page.waitForSelector('img[src*="blob:"], video, [aria-label*="إزالة"], [aria-label*="Remove"]', { timeout: 30000 });
                 await logToDashboard(`✅ ظهرت معاينة المرفق بنجاح`, 'success');
             } catch (e) {}
 
-            await logToDashboard(`⏳ ننتظر 30 ثانية إضافية لاستقرار المعاينة...`, 'info');
-            await sleep(30000); 
+            await logToDashboard(`⏳ ننتظر 35 ثانية إضافية لاستقرار المعاينة...`, 'info');
+            await sleep(35000); 
         }
     }
     
-    await sleep(5000); 
+    await sleep(6000); 
 
     let postText = post.ai_final_text2 || '';
     
@@ -356,11 +356,11 @@ async function publishToGroup(page, group, post, imagePath) {
 
     let fbUrlCheck = post.facebook_url || '';
     if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
-        await logToDashboard(`⏳ تم إدراج رابط فيسبوك، ننتظر 45 ثانية كاملة ليتفاعل النظام وتظهر المعاينة...`, 'info');
-        await sleep(45000);
+        await logToDashboard(`⏳ تم إدراج رابط فيسبوك، ننتظر 60 ثانية كاملة ليتفاعل النظام وتظهر المعاينة...`, 'info');
+        await sleep(60000);
     } else {
-        await logToDashboard(`⏳ تم لصق النص، ننتظر 25 ثانية ليتفاعل النظام مع النص المُدخل...`, 'info');
-        await sleep(25000); 
+        await logToDashboard(`⏳ تم لصق النص، ننتظر 35 ثانية ليتفاعل النظام مع النص المُدخل...`, 'info');
+        await sleep(35000); 
     }
 
     const publishButtons = [
@@ -377,7 +377,7 @@ async function publishToGroup(page, group, post, imagePath) {
         try {
             const button = page.locator(btn).last();
             if (await button.count() > 0 && await button.isVisible()) {
-                await button.click({ timeout: 6000, force: true });
+                await button.click({ timeout: 8000, force: true });
                 published = true;
                 await logToDashboard(`🚀 تم الضغط على زر النشر النهائي`, 'success');
                 break;
@@ -388,7 +388,7 @@ async function publishToGroup(page, group, post, imagePath) {
     if (!published) throw new Error('فشل العثور على زر النشر أو تعذر الضغط عليه');
     
     let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov'));
-    let finalWait = isUploadedVideo ? 60000 : 30000;
+    let finalWait = isUploadedVideo ? 75000 : 40000;
 
     await logToDashboard(`⏳ انتظار استقرار النشر نهائياً لمدة ${finalWait/1000} ثانية لضمان إرسال المنشور...`, 'info');
     await sleep(finalWait); 
@@ -602,7 +602,8 @@ async function processOnePostBot2(initialPostData) {
                 try { currentRemaining = JSON.parse(checkData.groups_json || '[]'); } catch(e){}
 
                 if (currentRemaining.length > 0 || botGroup) {
-                    const longBreak = randomDelay(300, 480);
+                    // ⏳ إطالة استراحة الأمان بين المجموعات إلى (من 7 إلى 10 دقائق) لحماية الحساب من الحظر
+                    const longBreak = randomDelay(420, 600);
                     await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
                 }
@@ -636,7 +637,7 @@ async function processOnePostBot2(initialPostData) {
                     error_message: JSON.stringify(failedGroups)
                 }).eq('id', initialPostData.id);
 
-                await sleep(10000);
+                await sleep(15000);
                 continue; 
             } finally {
                 await page.close();
@@ -674,11 +675,11 @@ async function startBot2Engine() {
 
     while (true) {
         try {
-            // البحث المباشر عن أي إعلان ينتظر التشغيل للبوت الثاني
+            // 🎯 البحث المباشر عن أي إعلان حالته running أو pending للبوت الثاني
             const { data, error } = await supabase
                 .from('publish_queue')
                 .select('*')
-                .eq('bot2_status', 'running')
+                .or('bot2_status.eq.running,bot2_status.eq.pending')
                 .order('id', { ascending: true })
                 .limit(1);
 
@@ -710,6 +711,7 @@ async function startBot2Engine() {
         }
     }
 }
+
 // 🔌 لتصدير الدالة أو تشغيلها فوراً عند فتح الملف مباشرة
 module.exports = processOnePostBot2;
 
