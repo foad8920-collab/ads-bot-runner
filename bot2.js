@@ -569,7 +569,7 @@ async function processOnePostBot2(initialPostData) {
         }
     }
 
-    const proxyUrl = await getSetting('PROXY_URL');
+    const proxyUrl = await getSetting('FB_PROXY_BOT2') || await getSetting('PROXY_URL');
 
     const launchOptions = {
         headless: true,
