@@ -1,6 +1,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const os = require('os'); // 🌟 تمت إضافة مكتبة os للتعامل مع مسارات النظام
 const axios = require('axios');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
@@ -10,7 +11,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://bmsfhqmsovicpgxxwsgi.s
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const TEMP_DIR = path.join(__dirname, 'temp');
+// 🌟 تم تعديل مسار المجلد المؤقت ليكون آمناً ومخفياً في بيئة النظام (يمنع انكشافه على GitHub)
+const TEMP_DIR = path.join(os.tmpdir(), 'bot-temp-files');
 const ACCOUNT_NAME = 'الحساب (2)';
 
 // 🧠 0. دالة حساب استهلاك الذاكرة (RAM Tracker - ميزة البوت 1)
@@ -513,7 +515,17 @@ async function processOnePostBot2(initialPostData) {
         timezoneId: 'Asia/Riyadh',
         locale: 'ar-SA',
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        permissions: ['clipboard-read', 'clipboard-write']
+        permissions: ['clipboard-read', 'clipboard-write'],
+        colorScheme: 'dark', // 🌟 إضافة لمحاكاة التصفح الطبيعي
+        hasTouch: false      // 🌟 تأكيد بيئة سطح المكتب
+    });
+
+    // 🌟 السر هنا: حقن سكربت التخفي لمسح أثر الأتمتة ومنع التشك بوينت نهائياً
+    await context.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        window.chrome = { runtime: {} };
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['ar', 'ar-SA', 'en-US', 'en'] });
     });
 
     // 🚀 تسريع التصفح وتوفير الرامات عبر حظر الخطوط (ميزة البوت 1)
