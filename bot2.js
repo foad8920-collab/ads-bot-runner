@@ -1,21 +1,21 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
-const os = require('os'); // 🌟 تمت إضافة مكتبة os للتعامل مع مسارات النظام
+const os = require('os');
 const axios = require('axios');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🔌 الاتصال بـ Supabase (دعم المتغيرات السحابية أو القيم الافتراضية)
+// 🔌 الاتصال بـ Supabase
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://bmsfhqmsovicpgxxwsgi.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// 🌟 تم تعديل مسار المجلد المؤقت ليكون آمناً ومخفياً في بيئة النظام (يمنع انكشافه على GitHub)
 const TEMP_DIR = path.join(os.tmpdir(), 'bot-temp-files');
 const ACCOUNT_NAME = 'الحساب (2)';
+const BOT_ID = 'bot2'; // 👈 المعرف الخاص بهذا البوت في جدول العدادات
 
-// 🧠 0. دالة حساب استهلاك الذاكرة (RAM Tracker - ميزة البوت 1)
+// 🧠 0. دالة حساب استهلاك الذاكرة
 function getMemoryLog() {
     const memory = process.memoryUsage();
     const rssMB = (memory.rss / 1024 / 1024).toFixed(1);
@@ -23,7 +23,74 @@ function getMemoryLog() {
     return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
 }
 
-// 🌟 1. تشغيل سيرفر ويب خفيف وتنبيه ذاتي لمنع Render من إيقاف الخدمة 24/7
+// 🛠️ 1. دالة فحص التاريخ وتصفير العداد اليومي تلقائياً
+async function checkAndResetCounter(botName) {
+    try {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const { data, error } = await supabase
+            .from('bot_counters')
+            .select('daily_count, last_reset_date')
+            .eq('bot_name', botName)
+            .single();
+
+        if (error || !data) return 0;
+
+        if (data.last_reset_date !== todayStr) {
+            await logToDashboard(`🔄 يوم جديد! تم تصفير عداد ${botName} تلقائياً.`, 'info');
+            await supabase
+                .from('bot_counters')
+                .update({ daily_count: 0, last_reset_date: todayStr })
+                .eq('bot_name', botName);
+            return 0;
+        }
+
+        return data.daily_count;
+    } catch (e) {
+        return 0;
+    }
+}
+
+// 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات
+async function logPublishSuccess(botName, adId, adTitle, groupName) {
+    try {
+        // تسجيل المجموعة المنشور فيها في جدول bot_publish_logs
+        await supabase
+            .from('bot_publish_logs')
+            .insert([{
+                bot_name: botName,
+                ad_id: adId,
+                ad_title: adTitle || 'إعلان بدون عنوان',
+                group_name: groupName,
+                status: 'SUCCESS'
+            }]);
+
+        // زيادة العداد اليومي والإجمالي في bot_counters
+        const { data } = await supabase
+            .from('bot_counters')
+            .select('daily_count, total_count')
+            .eq('bot_name', botName)
+            .single();
+
+        const currentDaily = (data?.daily_count || 0) + 1;
+        const currentTotal = (data?.total_count || 0) + 1;
+
+        await supabase
+            .from('bot_counters')
+            .update({
+                daily_count: currentDaily,
+                total_count: currentTotal,
+                last_active: new Date().toISOString(),
+                status: 'RUNNING'
+            })
+            .eq('bot_name', botName);
+
+        await logToDashboard(`📊 [العداد] تم تسجيل نشر المجموعة (${groupName}) | العداد اليومي لـ ${botName}: [${currentDaily}]`, 'success');
+    } catch (e) {
+        console.error("خطأ أثناء تسجيل عملية النشر:", e);
+    }
+}
+
+// 🌟 تشغيل سيرفر ويب خفيف
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Instance - ${ACCOUNT_NAME} is running 24/7!`));
@@ -44,7 +111,7 @@ app.listen(PORT, () => {
         } catch (e) {
             console.log(`⚠️ [Self-Ping] [${ACCOUNT_NAME}] فشل إرسال تنبيه الاستيقاظ:`, e.message);
         }
-    }, 300000); // تنبيه كل 5 دقائق
+    }, 300000);
 });
 
 function sleep(ms) {
@@ -57,7 +124,6 @@ function randomDelay(minSeconds, maxSeconds) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 🔄 دالة جلب الإعدادات الديناميكية من جدول system_settings في Supabase
 async function getSetting(keyName) {
     try {
         const { data, error } = await supabase
@@ -73,7 +139,6 @@ async function getSetting(keyName) {
     }
 }
 
-// 📢 دالة تسجيل السجلات المحسنة في Supabase والكونسول (مع ميزة RAM)
 async function logToDashboard(message, type = 'info') {
     const ramInfo = getMemoryLog();
     const fullMsg = `${message} | ${ramInfo}`;
@@ -93,7 +158,6 @@ async function logToDashboard(message, type = 'info') {
     }
 }
 
-// 🧹 دالة تنظيف السجلات القديمة تلقائياً من Supabase (ميزة البوت 1)
 async function cleanOldLogs() {
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     const { error } = await supabase
@@ -106,7 +170,6 @@ async function cleanOldLogs() {
     }
 }
 
-// 🧠 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي
 async function rewriteAdWithAI(title, description) {
     const geminiKey = await getSetting('GEMINI_KEY');
 
@@ -144,7 +207,6 @@ async function rewriteAdWithAI(title, description) {
     return `${title}\n\n${description}`;
 }
 
-// 🖼️ دالة تحميل الصورة أو الفيديو محلياً
 async function downloadImage(imageUrl) {
     if (!imageUrl) return null;
     if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -168,7 +230,6 @@ async function downloadImage(imageUrl) {
     return imagePath;
 }
 
-// 🎯 دالة فتح مربع النشر (خاصة بالبوت 2 تماماً بدون أي نقص)
 async function openPostBox(page) {
     await logToDashboard(`⏳ إعطاء فيسبوك مهلة 20 ثانية لبناء الأزرار ومربع النشر...`, 'info');
     await sleep(20000); 
@@ -249,7 +310,6 @@ async function openPostBox(page) {
     return false;
 }
 
-// 📝 دالة لصق النص (خاصة بالبوت 2 تماماً)
 async function pasteTextWithLines(page, postText) {
     await sleep(6000); 
 
@@ -308,7 +368,7 @@ async function pasteTextWithLines(page, postText) {
     }
 }
 
-// 🚀 دالة النشر الفعلي للمجموعة (خاصة بالبوت 2 تماماً)
+// 🚀 دالة النشر الفعلي للمجموعة
 async function publishToGroup(page, group, post, imagePath) {
     await logToDashboard(`📢 فتح رابط مجموعة البوت: ${group.name} | الرابط: ${group.url}`, 'info');
     
@@ -445,10 +505,21 @@ async function publishToGroup(page, group, post, imagePath) {
     await sleep(finalWait); 
     
     await logToDashboard(`✅ تم النشر في مجموعة البوت بنجاح تام: ${group.name}`, 'success');
+
+    // 🌟 [إضافة التسجيل الحي]: تسجيل العملية بنجاح وتحديث العداد والمجموعة
+    await logPublishSuccess(BOT_ID, post.id, post.ad_title, group.name);
 }
 
-// 🔄 دالة معالجة إعلان واحد للبوت الثاني (مدعومة بحماية Deadlock Timeout وحظر الخطوط)
+// 🔄 دالة معالجة إعلان واحد للبوت الثاني
 async function processOnePostBot2(initialPostData) {
+    // 🌟 [إضافة التصفير والتحقق]: فحص التاريخ اليومي وتصفير العداد لو تغير اليوم
+    const currentDailyCount = await checkAndResetCounter(BOT_ID);
+    if (currentDailyCount >= 15) {
+        await logToDashboard(`⚠️ تم الوصول للحد الأقصى اليومي المسموح به لـ ${BOT_ID} (15 منشوراً). يتوقف البوت لحماية الحساب.`, 'info');
+        await supabase.from('bot_counters').update({ status: 'MAX_LIMIT_REACHED' }).eq('bot_name', BOT_ID);
+        return;
+    }
+
     const cookiesRaw = await getSetting('FB_COOKIES_BOT2');
     if (!cookiesRaw) {
         await logToDashboard(`❌ ملف الكوكيز للبوت الثاني غير موجود في جدول system_settings!`, 'error');
@@ -516,11 +587,10 @@ async function processOnePostBot2(initialPostData) {
         locale: 'ar-SA',
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write'],
-        colorScheme: 'dark', // 🌟 إضافة لمحاكاة التصفح الطبيعي
-        hasTouch: false      // 🌟 تأكيد بيئة سطح المكتب
+        colorScheme: 'dark',
+        hasTouch: false
     });
 
-    // 🌟 السر هنا: حقن سكربت التخفي لمسح أثر الأتمتة ومنع التشك بوينت نهائياً
     await context.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
         window.chrome = { runtime: {} };
@@ -528,7 +598,6 @@ async function processOnePostBot2(initialPostData) {
         Object.defineProperty(navigator, 'languages', { get: () => ['ar', 'ar-SA', 'en-US', 'en'] });
     });
 
-    // 🚀 تسريع التصفح وتوفير الرامات عبر حظر الخطوط (ميزة البوت 1)
     await context.route('**/*', (route) => {
         const resourceType = route.request().resourceType();
         if (['font'].includes(resourceType)) {
@@ -569,11 +638,13 @@ async function processOnePostBot2(initialPostData) {
 
             if (freshData.bot2_status === 'stopped') {
                 await logToDashboard(`🛑 تم إيقاف البوت الثاني يدوياً بطلب من المستخدم!`, 'info');
+                await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
                 break;
             }
 
             while (freshData.bot2_status === 'paused') {
                 await logToDashboard(`⏸️ البوت الثاني في حالة إيقاف مؤقت (Paused)، يرجى الانتظار...`, 'info');
+                await supabase.from('bot_counters').update({ status: 'PAUSED' }).eq('bot_name', BOT_ID);
                 await sleep(10000);
                 const { data: pauseCheck } = await supabase
                     .from('publish_queue')
@@ -632,6 +703,8 @@ async function processOnePostBot2(initialPostData) {
                     bot2_group: null,
                     ai_final_text2: null
                 }).eq('id', initialPostData.id);
+
+                await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
                 break;
             }
 
@@ -659,7 +732,6 @@ async function processOnePostBot2(initialPostData) {
 
             const page = await context.newPage();
             try {
-                // 🛡️ حماية التجمّد (Deadlock Timeout - 6 دقائق أقصى حد للمجموعة الواحدة)
                 const publishTask = publishToGroup(page, targetGroup, freshData, imagePath);
                 const timeoutTask = new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('تجمّد مفاجئ أو بطء شديد أثناء معالجة الصفحة (Deadlock Timeout)')), 360000)
@@ -693,7 +765,6 @@ async function processOnePostBot2(initialPostData) {
                 }
 
                 if (currentRemaining.length > 0 || botGroup) {
-                    // ⏱️ استراحة الأمان الموزونة من 3 إلى 5 دقائق كما طلبناها
                     const longBreak = randomDelay(180, 300);
                     await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
@@ -737,6 +808,7 @@ async function processOnePostBot2(initialPostData) {
 
     } catch (err) {
         await logToDashboard(`❌ خطأ عام في البوت الثاني: ${err.message}`, 'error');
+        await supabase.from('bot_counters').update({ status: 'ERROR' }).eq('bot_name', BOT_ID);
     } finally {
         await browser.close();
         if (imagePath && fs.existsSync(imagePath)) {
@@ -746,7 +818,6 @@ async function processOnePostBot2(initialPostData) {
     }
 }
 
-// 🛠️ إعادة ضبط الإعلانات العالقة للـ bot2
 async function resetStuckBot2Posts() {
     await logToDashboard(`🔄 جاري فحص الإعلانات العالقة (processing) للبوت الثاني لإعادتها إلى (running)...`, 'info');
     const { error } = await supabase
@@ -759,11 +830,10 @@ async function resetStuckBot2Posts() {
     }
 }
 
-// 🌐 🌟 المحرك الذكي للبوت الثاني
 async function startBot2Engine() {
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثاني الذاتي بنجاح...`, 'success');
     await resetStuckBot2Posts();
-    await cleanOldLogs(); // تنظيف السجلات القديمة عند البدء
+    await cleanOldLogs();
 
     while (true) {
         try {
@@ -804,29 +874,30 @@ async function startBot2Engine() {
 
             if (!postToRun) {
                 await logToDashboard(`🎉 اكتملت جميع المهام في الطابور، تم إنهاء الجلسة السحابية بنجاح!`, 'success');
+                await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
                 console.log("✅ لا توجد إعلانات تحتوي على مجموعات قيد الانتظار، جاري إغلاق السكربت...");
                 process.exit(0);
             }
 
             await supabase.from('publish_queue').update({ bot2_status: 'processing' }).eq('id', postToRun.id);
+            await supabase.from('bot_counters').update({ status: 'RUNNING' }).eq('bot_name', BOT_ID);
 
             await processOnePostBot2(postToRun);
 
             await supabase.from('publish_queue').update({ bot2_status: 'stopped' }).eq('id', postToRun.id);
 
-            // ⏳ استراحة كبرى بعد انتهاء الإعلان تماماً (ميزة البوت 1)
             const macroDelay = randomDelay(900, 1800);
             await logToDashboard(`⏳ استراحة الإعلانات الكبرى للبوت 2: انتظار ${Math.round(macroDelay / 1000 / 60)} دقيقة...`, 'info');
             await sleep(macroDelay);
 
         } catch (err) {
             await logToDashboard(`❌ خطأ في محرك البوت الثاني الرئيسي: ${err.message}`, 'error');
+            await supabase.from('bot_counters').update({ status: 'ERROR' }).eq('bot_name', BOT_ID);
             await sleep(10000);
         }
     }
 }
 
-// 🔌 لتصدير الدالة أو تشغيلها فوراً عند فتح الملف مباشرة
 module.exports = processOnePostBot2;
 
 if (require.main === module) {
