@@ -11,9 +11,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://bmsfhqmsovicpgxxwsgi.s
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const TEMP_DIR = path.join(os.tmpdir(), 'bot-temp-files');
+const TEMP_DIR = path.join(os.tmpdir(), 'bot2-temp-files');
 const ACCOUNT_NAME = 'الحساب (2)';
-const BOT_ID = 'bot2'; // 👈 المعرف الخاص بهذا البوت في جدول العدادات
+const BOT_ID = 'bot2'; // المعرف الخاص بهذا البوت في جدول العدادات
 
 // 🧠 0. دالة حساب استهلاك الذاكرة
 function getMemoryLog() {
@@ -23,7 +23,7 @@ function getMemoryLog() {
     return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
 }
 
-// 🛠️ 1. دالة فحص التاريخ وتصفير العداد اليومي تلقائياً
+// 🛠️ 1. دالة فحص التاريخ وتصفير العداد اليومي ومسح السجلات القديمة تلقائياً
 async function checkAndResetCounter(botName) {
     try {
         const todayStr = new Date().toISOString().split('T')[0];
@@ -36,7 +36,11 @@ async function checkAndResetCounter(botName) {
         if (error || !data) return 0;
 
         if (data.last_reset_date !== todayStr) {
-            await logToDashboard(`🔄 يوم جديد! تم تصفير عداد ${botName} تلقائياً.`, 'info');
+            await logToDashboard(`🔄 يوم جديد! تم تصفير عداد ${botName} ومسح سجلات المجموعات القديمة.`, 'info');
+            
+            // 🧹 مسح الجدول لإبقاء الصفحة وقاعدة البيانات نظيفة يومياً
+            await supabase.from('bot_publish_logs').delete().neq('id', 0);
+
             await supabase
                 .from('bot_counters')
                 .update({ daily_count: 0, last_reset_date: todayStr })
@@ -50,7 +54,7 @@ async function checkAndResetCounter(botName) {
     }
 }
 
-// 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات
+// 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات للبوت الثاني
 async function logPublishSuccess(botName, adId, adTitle, groupName) {
     try {
         // تسجيل المجموعة المنشور فيها في جدول bot_publish_logs
@@ -230,6 +234,21 @@ async function downloadImage(imageUrl) {
     return imagePath;
 }
 
+// 🎯 دالة إحماء الجلسة (تثبيت الجلسة بفتح الفيسبوك الرئيسي لمنع التشيك بوينت)
+async function warmupSession(page) {
+    try {
+        await logToDashboard(`☕ [Warm-up] تثبيت جلسة الحساب وتأكيد الاتصال...`, 'info');
+        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await sleep(15000);
+
+        if (page.url().includes('login') || page.url().includes('checkpoint')) {
+            throw new Error('انتهت جلسة تسجيل الدخول أو يوجد Checkpoint للحساب');
+        }
+    } catch (e) {
+        if (e.message.includes('Checkpoint')) throw e;
+    }
+}
+
 async function openPostBox(page) {
     await logToDashboard(`⏳ إعطاء فيسبوك مهلة 20 ثانية لبناء الأزرار ومربع النشر...`, 'info');
     await sleep(20000); 
@@ -370,6 +389,9 @@ async function pasteTextWithLines(page, postText) {
 
 // 🚀 دالة النشر الفعلي للمجموعة
 async function publishToGroup(page, group, post, imagePath) {
+    // 🌟 خطوة الإحماء والتسخين قبل النشر
+    await warmupSession(page);
+
     await logToDashboard(`📢 فتح رابط مجموعة البوت: ${group.name} | الرابط: ${group.url}`, 'info');
     
     await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -506,13 +528,13 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await logToDashboard(`✅ تم النشر في مجموعة البوت بنجاح تام: ${group.name}`, 'success');
 
-    // 🌟 [إضافة التسجيل الحي]: تسجيل العملية بنجاح وتحديث العداد والمجموعة
+    // 🌟 تسجيل عملية النشر في العدادات وسجل اليوم الحي
     await logPublishSuccess(BOT_ID, post.id, post.ad_title, group.name);
 }
 
 // 🔄 دالة معالجة إعلان واحد للبوت الثاني
 async function processOnePostBot2(initialPostData) {
-    // 🌟 [إضافة التصفير والتحقق]: فحص التاريخ اليومي وتصفير العداد لو تغير اليوم
+    // 🌟 تصفير العداد اليومي وفحصه
     const currentDailyCount = await checkAndResetCounter(BOT_ID);
     if (currentDailyCount >= 15) {
         await logToDashboard(`⚠️ تم الوصول للحد الأقصى اليومي المسموح به لـ ${BOT_ID} (15 منشوراً). يتوقف البوت لحماية الحساب.`, 'info');
