@@ -851,6 +851,9 @@ async function resetStuckBot2Posts() {
 }
 
 async function startBot2Engine() {
+    await logToDashboard(`🚀 تم تشغيل البوت الثاني... جاري انتظار 30 ثانية لتفادي التزامن مع البوت الأول...`, 'info');
+    await sleep(30000); // ⏳ التأخير الزمني لحماية الحسابين من الانطلاق في نفس اللحظة
+
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثاني الذاتي بنجاح...`, 'success');
     await resetStuckBot2Posts();
     await cleanOldLogs();
