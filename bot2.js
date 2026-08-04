@@ -395,7 +395,7 @@ async function publishToGroup(page, group, post, imagePath) {
     await logToDashboard(`📢 فتح رابط مجموعة البوت: ${group.name} | الرابط: ${group.url}`, 'info');
     
     // ⏳ إعطاء مهلة مرنة للمتصفح (120 ثانية) للتعامل مع أي بطء طارئ
-await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 120000 });
     
     await logToDashboard(`⏳ تم تحميل الصفحة، ننتظر 45 ثانية كاملة لاستقرار عناصر الصفحة وبناء السكربتات...`, 'info');
     await sleep(45000); 
@@ -570,22 +570,12 @@ async function processOnePostBot2(initialPostData) {
         }
     }
 
-   // 🌐 جلب البروكسي المخصص للبوت الثاني أو الاحتياطي
-let proxyUrl = await getSetting('FB_PROXY_BOT2');
+    // 🌐 جلب البروكسي المخصص للبوت الثاني أو الاحتياطي
+    let proxyUrl = await getSetting('FB_PROXY_BOT2');
+    if (!proxyUrl) {
+        proxyUrl = await getSetting('PROXY_URL');
+    }
 
-if (!proxyUrl) {
-    proxyUrl = await getSetting('PROXY_URL');
-}
-
-await logToDashboard(`🌐 تم دمج وتفعيل البروكسي بنجاح: ${proxyUrl}`, 'info');
-
-// 🚀 إطلاق المتصفح بشكل آمن ومستقر
-const browser = await chromium.launch({
-    proxy: proxyUrl ? { server: proxyUrl } : undefined,
-    headless: true
-});
-
-    
     const launchOptions = {
         headless: true,
         args: [
@@ -616,6 +606,7 @@ const browser = await chromium.launch({
         await logToDashboard(`🌐 تم دمج وتفعيل البروكسي بنجاح: ${proxyUrl}`, 'success');
     }
 
+    // 🚀 إطلاق المتصفح بشكل آمن ومستقر مرّة واحدة فقط
     const browser = await chromium.launch(launchOptions);
 
     const context = await browser.newContext({
