@@ -234,18 +234,30 @@ async function downloadImage(imageUrl) {
     return imagePath;
 }
 
-// 🎯 دالة إحماء الجلسة (تثبيت الجلسة بفتح الفيسبوك الرئيسي لمنع التشيك بوينت)
+// 🎯 دالة إحماء الجلسة المتقدمة (محاكاة التصفح البشري بعد الخمول الطويل)
 async function warmupSession(page) {
     try {
-        await logToDashboard(`☕ [Warm-up] تثبيت جلسة الحساب وتأكيد الاتصال...`, 'info');
-        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await sleep(15000);
+        await logToDashboard(`☕ [Warm-up] تسجيل الدخول وتصفح آخر الأخبار لإعادة تنشيط الجلسة الخاملة...`, 'info');
+        
+        // 1. فتح الصفحة الرئيسية
+        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await sleep(randomDelay(8, 12));
 
+        // 2. التحقق من سلامة الجلسة
         if (page.url().includes('login') || page.url().includes('checkpoint')) {
             throw new Error('انتهت جلسة تسجيل الدخول أو يوجد Checkpoint للحساب');
         }
+
+        // 3. محاكاة التمرير لأسفل (Scroll) كالمستخدم الحقيقي
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await sleep(randomDelay(4, 7));
+        await page.evaluate(() => window.scrollBy(0, 500));
+        await sleep(randomDelay(5, 8));
+
+        await logToDashboard(`✅ تم إحماء الجلسة بنجاح واستقرار الحساب!`, 'success');
     } catch (e) {
         if (e.message.includes('Checkpoint')) throw e;
+        await logToDashboard(`⚠️ تنبيه أثناء الإحماء: ${e.message}`, 'warn');
     }
 }
 
