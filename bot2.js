@@ -671,7 +671,7 @@ async function processOnePostBot2(initialPostData) {
             if (freshData.bot2_status === 'stopped') {
                 await logToDashboard(`🛑 تم إيقاف البوت الثاني يدوياً بطلب من المستخدم، جاري إنهاء الجلسة السحابية بالكامل!`, 'info');
                 await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
-                process.exit(0); // ✅ إغلاق السكربت وإنهاء الجلسة في GitHub فوراً
+                process.exit(0);
             }
 
             while (freshData.bot2_status === 'paused') {
@@ -684,7 +684,11 @@ async function processOnePostBot2(initialPostData) {
                     .eq('id', initialPostData.id)
                     .single();
                 
-                if (!pauseCheck || pauseCheck.bot2_status === 'stopped') break;
+                if (!pauseCheck || pauseCheck.bot2_status === 'stopped') {
+                    await logToDashboard(`🛑 تم إيقاف البوت الثاني يدوياً بطلب من المستخدم، جاري إنهاء الجلسة السحابية بالكامل!`, 'info');
+                    await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
+                    process.exit(0);
+                }
                 if (pauseCheck.bot2_status === 'running') {
                     freshData.bot2_status = 'running';
                     break;
@@ -762,7 +766,7 @@ async function processOnePostBot2(initialPostData) {
                 await logToDashboard(`🎯 تم سحب المجموعة (${targetGroup.name}) وحذفها من الطابور الرئيسي لضمان عدم التكرار...`, 'success');
             }
 
-            // 💡 --- إضافة فحص التكرار (الحل العبقري) ---
+            // 💡 --- إضافة فحص التكرار من جدول السجلات ---
             const { data: logData, error: logError } = await supabase
                 .from('bot_publish_logs')
                 .select('id')
@@ -794,7 +798,6 @@ async function processOnePostBot2(initialPostData) {
                 const currentSuccessCount = latestSuccessPost?.success_count || 0;
                 const newSuccessCount = currentSuccessCount + 1;
                 
-                // 🛠️ الإصلاح الجوهري للبوت الثاني: تفريغ botGroup في الذاكرة الحية فوراً
                 botGroup = null; // ❌ تفريغ المتغير المحلي بضمان تام لمنع إعادة النشر
                 
                 await supabase.from('publish_queue').update({
