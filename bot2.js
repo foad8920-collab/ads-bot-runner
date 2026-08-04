@@ -54,19 +54,28 @@ async function checkAndResetCounter(botName) {
     }
 }
 
-// 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات للبوت الثاني
+// 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات للبوت الثاني (معدلة لضبط الوقت الفعلي بدقة)
 async function logPublishSuccess(botName, adId, adTitle, groupName) {
     try {
-        // تسجيل المجموعة المنشور فيها في جدول bot_publish_logs
-        await supabase
+        // 🛠️ توليد الوقت المحلي الدقيق بتوقيت السعودية لضمان تطابقه مع وقت النشر الفعلي
+        const exactPublishTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Riyadh' })).toISOString();
+
+        // تسجيل المجموعة المنشور فيها في جدول bot_publish_logs مع الوقت المضبوط صراحة
+        const { error: insertError } = await supabase
             .from('bot_publish_logs')
             .insert([{
                 bot_name: botName,
                 ad_id: adId,
                 ad_title: adTitle || 'إعلان بدون عنوان',
                 group_name: groupName,
-                status: 'SUCCESS'
+                status: 'SUCCESS',
+                published_at: exactPublishTime
             }]);
+
+        if (insertError) {
+            console.error("❌ خطأ Supabase في حفظ سجل النشر:", insertError.message);
+            await logToDashboard(`❌ فشل حفظ اللوج في الجدول: ${insertError.message}`, 'error');
+        }
 
         // زيادة العداد اليومي والإجمالي في bot_counters
         const { data } = await supabase
@@ -83,7 +92,7 @@ async function logPublishSuccess(botName, adId, adTitle, groupName) {
             .update({
                 daily_count: currentDaily,
                 total_count: currentTotal,
-                last_active: new Date().toISOString(),
+                last_active: exactPublishTime,
                 status: 'RUNNING'
             })
             .eq('bot_name', botName);
@@ -582,7 +591,7 @@ async function processOnePostBot2(initialPostData) {
         }
     }
 
-    // 🚀 خيارات تشغيل المتصفح بالسرعة الكامله والتخفي التام (بدون البروكسي البطيء)
+    // 🚀 خيارات تشغيل المتصفح بالسرعة الكاملة والتخفي التام (بدون البروكسي البطيء)
     const launchOptions = {
         headless: true,
         args: [
