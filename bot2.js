@@ -23,10 +23,10 @@ function getMemoryLog() {
     return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
 }
 
-// 🛠️ 1. دالة فحص التاريخ وتصفير العداد اليومي ومسح السجلات القديمة تلقائياً
+// 🛠️ 1. دالة فحص التاريخ وتصفير العداد اليومي ومسح السجلات القديمة تلقائياً (معدلة بتوقيت الرياض)
 async function checkAndResetCounter(botName) {
     try {
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
         const { data, error } = await supabase
             .from('bot_counters')
             .select('daily_count, last_reset_date')
@@ -36,14 +36,14 @@ async function checkAndResetCounter(botName) {
         if (error || !data) return 0;
 
         if (data.last_reset_date !== todayStr) {
-            await logToDashboard(`🔄 يوم جديد! تم تصفير عداد ${botName} ومسح سجلات المجموعات القديمة.`, 'info');
+            await logToDashboard(`🔄 يوم جديد (${todayStr})! تم تصفير عداد ${botName} ومسح سجلات المجموعات القديمة.`, 'info');
             
             // 🧹 مسح الجدول لإبقاء الصفحة وقاعدة البيانات نظيفة يومياً
             await supabase.from('bot_publish_logs').delete().neq('id', 0);
 
             await supabase
                 .from('bot_counters')
-                .update({ daily_count: 0, last_reset_date: todayStr })
+                .update({ daily_count: 0, last_reset_date: todayStr, status: 'RUNNING' })
                 .eq('bot_name', botName);
             return 0;
         }
@@ -111,7 +111,7 @@ app.listen(PORT, () => {
         try {
             const myServerUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`; 
             await axios.get(myServerUrl);
-            await logToDashboard(`⏰ [Self-Ping] [${ACCOUNT_NAME}] تم تنبيه السيرفر بنجاح للحفاظ عليه مستيقظاً.`, 'info');
+            // 🔕 تم إيقاف إرسال رسائل الـ Self-Ping للوحة التحكم لإلغاء الإزعاج
         } catch (e) {
             console.log(`⚠️ [Self-Ping] [${ACCOUNT_NAME}] فشل إرسال تنبيه الاستيقاظ:`, e.message);
         }
@@ -780,6 +780,9 @@ async function processOnePostBot2(initialPostData) {
                 const currentSuccessCount = latestSuccessPost?.success_count || 0;
                 const newSuccessCount = currentSuccessCount + 1;
                 
+                // 🛠️ الإصلاح الجوهري للبوت الثاني: تفريغ botGroup في الذاكرة الحية فوراً
+                botGroup = null; // ❌ تفريغ المتغير المحلي بضمان تام لمنع إعادة النشر
+                
                 await supabase.from('publish_queue').update({
                     bot2_group: null,
                     ai_final_text2: null,
@@ -796,7 +799,7 @@ async function processOnePostBot2(initialPostData) {
                     try { currentRemaining = JSON.parse(checkData.groups_json || '[]'); } catch(e){}
                 }
 
-                if (currentRemaining.length > 0 || botGroup) {
+                if (currentRemaining.length > 0) {
                     const longBreak = randomDelay(180, 300);
                     await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
@@ -823,6 +826,8 @@ async function processOnePostBot2(initialPostData) {
                 failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
 
                 await logToDashboard(`❌ خطأ أثناء النشر في المجموعة (${targetGroup.name}): ${err.message}`, 'error');
+                
+                botGroup = null; // ❌ تفريغ الذاكرة المحلية في حالة الخطأ
                 
                 await supabase.from('publish_queue').update({ 
                     bot2_group: null,
