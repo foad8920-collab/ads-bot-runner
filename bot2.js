@@ -394,8 +394,8 @@ async function publishToGroup(page, group, post, imagePath) {
 
     await logToDashboard(`📢 فتح رابط مجموعة البوت: ${group.name} | الرابط: ${group.url}`, 'info');
     
-    // ⏳ إعطاء مهلة مرنة للمتصفح (120 ثانية) للتعامل مع أي بطء طارئ
-    await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    // ⚡ تم تخفيض المهلة لـ 45 ثانية لأن الصفحات ستفتح بسرعة الصاروخ بدون البروكسي
+    await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     
     await logToDashboard(`⏳ تم تحميل الصفحة، ننتظر 45 ثانية كاملة لاستقرار عناصر الصفحة وبناء السكربتات...`, 'info');
     await sleep(45000); 
@@ -570,12 +570,7 @@ async function processOnePostBot2(initialPostData) {
         }
     }
 
-    // 🌐 جلب البروكسي المخصص للبوت الثاني أو الاحتياطي
-    let proxyUrl = await getSetting('FB_PROXY_BOT2');
-    if (!proxyUrl) {
-        proxyUrl = await getSetting('PROXY_URL');
-    }
-
+    // 🚀 خيارات تشغيل المتصفح بالسرعة الكامله والتخفي التام (بدون البروكسي البطيء)
     const launchOptions = {
         headless: true,
         args: [
@@ -601,12 +596,9 @@ async function processOnePostBot2(initialPostData) {
         ]
     };
 
-    if (proxyUrl && proxyUrl.trim() !== '') {
-        launchOptions.proxy = { server: proxyUrl.trim() };
-        await logToDashboard(`🌐 تم دمج وتفعيل البروكسي بنجاح: ${proxyUrl}`, 'success');
-    }
+    await logToDashboard(`⚡ تم تشغيل المتصفح بالسرعة المباشرة وبدون بروكسي بطيء`, 'info');
 
-    // 🚀 إطلاق المتصفح بشكل آمن ومستقر مرّة واحدة فقط
+    // 🚀 إطلاق المتصفح
     const browser = await chromium.launch(launchOptions);
 
     const context = await browser.newContext({
