@@ -570,8 +570,9 @@ async function processOnePostBot2(initialPostData) {
         }
     }
 
-    // 🌐 تجربة البروكسي المخصص، وفي حال فشل الاتصال يتم التحول للبروكسي الاحتياطي
+   // 🌐 تجربة البروكسي المخصص، وفي حال فشل الاتصال يتم التحول للبروكسي الاحتياطي
 let proxyUrl = await getSetting('FB_PROXY_BOT2');
+let browser;
 
 try {
     // محاولة الاتصال بالبروكسي المخصص
@@ -588,6 +589,7 @@ try {
     });
 }
 
+    
     const launchOptions = {
         headless: true,
         args: [
