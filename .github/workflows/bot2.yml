@@ -3,6 +3,11 @@ name: Run Facebook Bot 2
 on:
   workflow_dispatch:
 
+# 🔒 منع التزامن وتكرار التشغيل للبوت الثاني
+concurrency:
+  group: bot2-execution-group
+  cancel-in-progress: true
+
 jobs:
   run-bot2:
     runs-on: ubuntu-latest
