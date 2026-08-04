@@ -394,7 +394,8 @@ async function publishToGroup(page, group, post, imagePath) {
 
     await logToDashboard(`📢 فتح رابط مجموعة البوت: ${group.name} | الرابط: ${group.url}`, 'info');
     
-    await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // ⏳ إعطاء مهلة مرنة للمتصفح (120 ثانية) للتعامل مع أي بطء طارئ
+await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 120000 });
     
     await logToDashboard(`⏳ تم تحميل الصفحة، ننتظر 45 ثانية كاملة لاستقرار عناصر الصفحة وبناء السكربتات...`, 'info');
     await sleep(45000); 
