@@ -669,9 +669,9 @@ async function processOnePostBot2(initialPostData) {
             if (!freshData) break;
 
             if (freshData.bot2_status === 'stopped') {
-                await logToDashboard(`🛑 تم إيقاف البوت الثاني يدوياً بطلب من المستخدم!`, 'info');
+                await logToDashboard(`🛑 تم إيقاف البوت الثاني يدوياً بطلب من المستخدم، جاري إنهاء الجلسة السحابية بالكامل!`, 'info');
                 await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
-                break;
+                process.exit(0); // ✅ إغلاق السكربت وإنهاء الجلسة في GitHub فوراً
             }
 
             while (freshData.bot2_status === 'paused') {
