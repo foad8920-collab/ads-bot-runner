@@ -570,7 +570,23 @@ async function processOnePostBot2(initialPostData) {
         }
     }
 
-    const proxyUrl = await getSetting('FB_PROXY_BOT2') || await getSetting('PROXY_URL');
+    // 🌐 تجربة البروكسي المخصص، وفي حال فشل الاتصال يتم التحول للبروكسي الاحتياطي
+let proxyUrl = await getSetting('FB_PROXY_BOT2');
+
+try {
+    // محاولة الاتصال بالبروكسي المخصص
+    browser = await chromium.launch({
+        proxy: proxyUrl ? { server: proxyUrl } : undefined,
+        headless: true
+    });
+} catch (err) {
+    console.log("⚠️ البروكسي المخصص لا يستجيب، جاري التحول للبروكسي الاحتياطي...");
+    proxyUrl = await getSetting('PROXY_URL');
+    browser = await chromium.launch({
+        proxy: proxyUrl ? { server: proxyUrl } : undefined,
+        headless: true
+    });
+}
 
     const launchOptions = {
         headless: true,
