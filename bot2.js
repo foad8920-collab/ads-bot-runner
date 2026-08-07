@@ -608,6 +608,12 @@ async function processOnePostBot2(initialPostData) {
         return;
     }
 
+    // 💡 --- إضافة تأخير أمان ابتدائي لإعطاء الأولوية للبوت الأول بالبدء أولاً ---
+    const initialOffsetDelay = randomDelay(240, 360); // تأخير بين 4 إلى 6 دقائق
+    await logToDashboard(`⏳ [تنسيق التباعد] انتظار أمان لمدة ${Math.round(initialOffsetDelay / 1000 / 60)} دقائق لضمان عدم التزامن وبدء البوت الأول أولاً...`, 'info');
+    await sleep(initialOffsetDelay);
+    // --------------------------------------------------------------------------
+
     await logToDashboard(`🚀 بدأ معالجة الإعلان (#${initialPostData.id}: ${initialPostData.ad_title})...`, 'info');
 
     let mediaUrl = '';
@@ -821,8 +827,10 @@ async function processOnePostBot2(initialPostData) {
             const page = await context.newPage();
             try {
                 const publishTask = publishToGroup(page, targetGroup, freshData, imagePath);
+                
+                // 💡 رفع مهلة الأمان الكبرى لـ Deadlock Timeout إلى 15 دقيقة (900,000 مللي ثانية) بالكامل
                 const timeoutTask = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('تجمّد مفاجئ أو بطء شديد أثناء معالجة الصفحة (Deadlock Timeout)')), 360000)
+                    setTimeout(() => reject(new Error('تجمّد مفاجئ أو بطء شديد أثناء معالجة الصفحة (Deadlock Timeout)')), 900000)
                 );
 
                 await Promise.race([publishTask, timeoutTask]);
