@@ -681,8 +681,8 @@ async function processOnePostBot2(initialPostData) {
 
     const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
-        timezoneId: 'Asia/Riyadh',
-        locale: 'ar-SA',
+        timezoneId: 'Asia/Aden', // توقيت مطابق للمنطقة الجغرافية
+        locale: 'ar-YE',         // لغة مطابقة للمنطقة
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write'],
         colorScheme: 'dark',
