@@ -6,7 +6,9 @@ const axios = require('axios');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🔌 الاتصال بـ Supabase
+// ============================================================
+// 🔌 Supabase
+// ============================================================
 
 const SUPABASE_URL =
     process.env.SUPABASE_URL ||
@@ -16,10 +18,19 @@ const SUPABASE_KEY =
     process.env.SUPABASE_KEY ||
     'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef';
 
-const supabase = createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-);
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.error(
+        '❌ SUPABASE_URL أو SUPABASE_KEY غير موجود في Environment Variables'
+    );
+
+    process.exit(1);
+}
+
+const supabase =
+    createClient(
+        SUPABASE_URL,
+        SUPABASE_KEY
+    );
 
 // ============================================================
 // ⚙️ إعدادات البوت
