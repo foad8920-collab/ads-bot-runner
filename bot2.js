@@ -93,7 +93,7 @@ async function checkAndResetCounter(botName) {
 async function logPublishSuccess(botName, adId, actualPostText, groupName) {
     try {
         // 🛠️ توليد الوقت المحلي الدقيق بتوقيت السعودية لمنع تحويل الساعات لـ UTC
-        const exactPublishTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Riyadh' }).replace(' ', 'T');
+        const exactPublishTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Aden' }).replace(' ', 'T') + '+03:00';
 
         // قطع جزء مناسب من نص الذكاء الاصطناعي الفعلي بدلاً من النص الثابت
         const displayTitle = actualPostText ? (actualPostText.substring(0, 120) + '...') : 'إعلان بدون عنوان';
