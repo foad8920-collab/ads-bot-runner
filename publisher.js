@@ -1,7 +1,7 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
-
+ 
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
