@@ -1,4 +1,4 @@
-# استخدام صورة Playwright الرسمية مع نظام jammy الجديد
+# استخدام صورة Playwright الرسمية مع نظام jammy
 FROM mcr.microsoft.com/playwright:v1.62.1-jammy
 
 # ترقية Node.js داخل الحاوية إلى الإصدار 22 ليتوافق مع Supabase
@@ -13,6 +13,9 @@ COPY package*.json ./
 # تثبيت جميع المكتبات
 RUN npm install
 RUN npm install playwright-extra puppeteer-extra-plugin-stealth ws
+
+# 🚀 السطر الجديد: إجبار السيرفر على تنزيل المتصفح في المسار الذي يبحث عنه
+RUN npx playwright install chromium
 
 # نسخ بقية كود المشروع
 COPY . .
