@@ -1,14 +1,18 @@
-# استخدام صورة Playwright الرسمية المجهزة بالكامل من Microsoft بكل مكتبات Linux
+# استخدام صورة Playwright الرسمية المجهزة بالكامل من Microsoft
 FROM mcr.microsoft.com/playwright:v1.40.0-focal
 
+# تحديد مجلد العمل
 WORKDIR /app
 
-# نسخ وتثبيت المكتبات
+# نسخ ملفات التعاريف
 COPY package*.json ./
-RUN npm install
 
-# نسخ ملفات المشروع
+# تثبيت جميع المكتبات المذكورة في package.json والمكتبات الإضافية
+RUN npm install
+RUN npm install playwright-extra puppeteer-extra-plugin-stealth
+
+# نسخ بقية كود المشروع
 COPY . .
 
-# أمر التشغيل
+# أمر التشغيل الأساسي
 CMD ["node", "--expose-gc", "publisher.js"]
