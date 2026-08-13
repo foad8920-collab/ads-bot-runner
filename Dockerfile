@@ -1,15 +1,20 @@
-FROM mcr.microsoft.com/playwright:v1.62.1-jammy
+# استخدام بيئة Node 22 الرسمية والصافية (بدون تعقيدات مسارات مايكروسوفت)
+FROM node:22-bookworm
 
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
-
+# تحديد مجلد العمل
 WORKDIR /app
 
+# نسخ ملفات التعاريف
 COPY package*.json ./
+
+# تثبيت المكتبات
 RUN npm install
 
-# تنزيل المتصفح الرسمي النظيف المرتبط بنسخة Playwright
-RUN npx playwright install chromium
+# هذا الأمر السحري ينزل متصفح الكروم مع كل مكتبات لينكس الأساسية المطلوبة له من الصفر وبدون أي تضارب!
+RUN npx playwright install --with-deps chromium
 
+# نسخ باقي كود المشروع
 COPY . .
 
+# أمر التشغيل الأساسي
 CMD ["node", "--expose-gc", "publisher.js"]
