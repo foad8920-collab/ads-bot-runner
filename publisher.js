@@ -176,7 +176,7 @@ async function resetStuckPosts() {
     await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت الثاني المتبقية (bot2_group)...`, 'info');
     const { error } = await supabase
         .from('publish_queue')
-        .update({ bot2_group: null, ai_final_text_bot2: null })
+        .update({ bot2_group: null, ai_final_text2: null })
         .not('bot2_group', 'is', null);
 
     if (error) {
