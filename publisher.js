@@ -495,7 +495,7 @@ async function publishToGroup(page, group, post, imagePath) {
     await sleep(5000); 
 
     // 🔥 2️⃣ فحص النص أو صياغته خصيصاً للبوت الثاني
-    let postText = post.ai_final_text_bot2 || post.ai_final_text || '';
+    let postText = post.ai_final_text2 || post.ai_final_text || '';
     
     if (!postText || postText.trim() === '') {
         await logToDashboard(`🧠 [AI] جاري صياغة نص جديد للبوت الثاني خصيصاً لمجموعة: ${group.name}...`, 'info');
@@ -509,7 +509,7 @@ async function publishToGroup(page, group, post, imagePath) {
         
         // حفظ النص المولد المخصص للبوت الثاني إن كان العمود موجوداً
         try {
-            await supabase.from('publish_queue').update({ ai_final_text_bot2: postText }).eq('id', post.id);
+            await supabase.from('publish_queue').update({ ai_final_text2: postText }).eq('id', post.id);
         } catch(e) {}
     } else {
         await logToDashboard(`📌 [Supabase] تم جلب النص الجاهز للبوت الثاني.`, 'success');
