@@ -584,18 +584,30 @@ async function processOnePost(post) {
         await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
     }
 
-   const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: '/usr/bin/chromium',
-    args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote'
-    ]
-});
+   const browser = await chromium.launch({
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-gpu',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-service-autorun',
+            '--password-store=basic',
+            '--single-process',
+            '--js-flags="--max-old-space-size=128"',
+            '--disable-extensions',
+            '--disable-component-extensions-with-background-pages',
+            '--disable-default-apps',
+            '--mute-audio',
+            '--no-zygote',
+            '--disable-accelerated-video-decode',
+            '--disable-infobars',
+            '--hide-scrollbars'
+        ]
+    });
  
     const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
