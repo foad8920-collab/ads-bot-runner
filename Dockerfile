@@ -4,6 +4,9 @@ FROM mcr.microsoft.com/playwright:v1.62.1-jammy
 # ترقية Node.js داخل الحاوية إلى الإصدار 22 ليتوافق مع Supabase
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
 
+# 🌟 إخبار Playwright رسمياً بمكان المتصفحات في الصورة السحابية لكي يراها الكود مباشرة
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
 # تحديد مجلد العمل
 WORKDIR /app
 
@@ -14,7 +17,7 @@ COPY package*.json ./
 RUN npm install
 RUN npm install playwright-extra puppeteer-extra-plugin-stealth ws
 
-# 🚀 السطر الجديد: إجبار السيرفر على تنزيل المتصفح في المسار الذي يبحث عنه
+# إجبار السيرفر على تنزيل المتصفح وضبطه في المسار العام
 RUN npx playwright install chromium
 
 # نسخ بقية كود المشروع
