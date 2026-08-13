@@ -585,9 +585,8 @@ async function processOnePost(post) {
     }
 
     const browser = await chromium.launch({
-    headless: true,
-    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/ms-playwright/chromium-1148/chrome-linux/chrome',
-    args: [
+        headless: true,
+        args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
@@ -609,7 +608,7 @@ async function processOnePost(post) {
             '--hide-scrollbars'
         ]
     });
-
+ 
     const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
