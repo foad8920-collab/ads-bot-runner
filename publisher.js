@@ -1,6 +1,4 @@
-const { chromium } = require('playwright-extra');
-const stealth = require('puppeteer-extra-plugin-stealth')();
-chromium.use(stealth);
+const { chromium } = require('playwright');
  
 const axios = require('axios');
 const fs = require('fs');
@@ -199,7 +197,6 @@ async function cleanOldLogs() {
     }
 }
 
-// 🔥 الجلب الذكي للبوت الثاني: يجلب الإعلان الجاهز سواء كان pending أو processing ولديه مجموعات
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
@@ -217,7 +214,7 @@ async function getNextPendingPost() {
             let groups = [];
             try { groups = JSON.parse(post.groups_json || '[]'); } catch(e) {}
             if (groups.length > 0) {
-                return post; // العثور على إعلان يحتوي على مجموعات متبقية للنشر
+                return post;
             }
         }
     }
@@ -431,7 +428,6 @@ async function publishToGroup(page, group, post, imagePath) {
 
     await sleep(randomDelay(3, 5)); 
 
-    // 1️⃣ رفع الصورة ومعاينتها
     if (imagePath) {
         const imageTriggerSelectors = [
             'div[aria-label="صورة/فيديو"]',
@@ -494,7 +490,6 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await sleep(5000); 
 
-    // 🔥 2️⃣ فحص النص أو صياغته خصيصاً للبوت الثاني
     let postText = post.ai_final_text2 || post.ai_final_text || '';
     
     if (!postText || postText.trim() === '') {
@@ -507,7 +502,6 @@ async function publishToGroup(page, group, post, imagePath) {
             postText += `\n\n${fbUrl.trim()}`;
         }
         
-        // حفظ النص المولد المخصص للبوت الثاني إن كان العمود موجوداً
         try {
             await supabase.from('publish_queue').update({ ai_final_text2: postText }).eq('id', post.id);
         } catch(e) {}
@@ -517,7 +511,6 @@ async function publishToGroup(page, group, post, imagePath) {
 
     await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
 
-    // 3️⃣ لصق النص والانتظار للتفاعل
     await pasteTextWithLines(page, postText);
     
     let fbUrlCheck = post.facebook_url || '';
@@ -699,7 +692,6 @@ async function processOnePost(post) {
             const targetGroup = remainingGroups[0];
             const newRemaining = remainingGroups.slice(1);
 
-            // 🔥 تخصيص سحب القروب للبوت الثاني في حقل bot2_group
             const updatePayload = {
                 groups_json: JSON.stringify(newRemaining)
             };
@@ -745,7 +737,6 @@ async function processOnePost(post) {
                 await page.close();
                 await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم تدمير صفحة المجموعة.`, 'info');
 
-                // 🔥 تصفير حقول البوت الثاني المخصصة بعد كل مجموعة
                 const resetPayload = {
                     success_count: successCount,
                     failed_count: failedCount,
