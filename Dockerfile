@@ -1,5 +1,5 @@
-# استخدام صورة Playwright الرسمية المجهزة بالكامل من Microsoft
-FROM mcr.microsoft.com/playwright:v1.40.0-focal
+# استخدام صورة Playwright الرسمية بالإصدار المطابق لمكتبتك بالمليمتر
+FROM mcr.microsoft.com/playwright:v1.62.1-focal
 
 # 🚀 التحديث الجذري: ترقية Node.js داخل الحاوية إلى الإصدار 22 ليتوافق مع Supabase وإنهاء خطأ الـ WebSocket
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
