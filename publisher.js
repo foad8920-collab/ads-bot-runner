@@ -8,9 +8,9 @@ const path = require('path');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🌟 تخصيص رقم الحساب والسيرفر الأول (الافتراضي: 1)
-const ACCOUNT_NUM = process.env.ACCOUNT_NUMBER || '1';
-const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) ? `./cookies${ACCOUNT_NUM}.json` : './cookies.json';
+// 🌟 تخصيص رقم الحساب والسيرفر الثاني (الافتراضي: 2)
+const ACCOUNT_NUM = process.env.ACCOUNT_NUMBER || '2';
+const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) ? `./cookies${ACCOUNT_NUM}.json` : './cookies2.json';
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 
 // 🧠 0. دالة حساب استهلاك الذاكرة (RAM Tracker)
@@ -21,7 +21,7 @@ function getMemoryLog() {
     return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
 }
 
-// 🌟 1. تشغيل سيرفر ويب خفيف لمنع Render من إيقاف الخدمة
+// 🌟 1. تشغيل سيرفر ويب خفيف لمنع الخمول
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Instance - ${ACCOUNT_NAME} is running 24/7!`));
@@ -65,7 +65,7 @@ function randomDelay(minSeconds, maxSeconds) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 🤖 دالة إعادة صياغة الإعلان (النسخة الخارقة - تجربة جميع النماذج المدعومة)
+// 🤖 دالة إعادة صياغة الإعلان
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
@@ -173,16 +173,16 @@ async function downloadImage(imageUrl) {
 }
 
 async function resetStuckPosts() {
-    await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص الإعلانات العالقة (Processing) لإعادتها إلى وضع الانتظار (Pending)...`, 'info');
+    await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت الثاني المتبقية (bot2_group)...`, 'info');
     const { error } = await supabase
         .from('publish_queue')
-        .update({ status: 'pending', bot1_group: null, ai_final_text: null })
-        .eq('status', 'processing');
+        .update({ bot2_group: null, ai_final_text_bot2: null })
+        .not('bot2_group', 'is', null);
 
     if (error) {
-        await logToDashboard(`⚠️ [${ACCOUNT_NAME}] خطأ في إعادة ضبط الإعلانات العالقة: ${error.message}`, 'error');
+        await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تنبيه أثناء تصفير الحقول المؤقتة: ${error.message}`, 'info');
     } else {
-        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير النصوص المؤقتة.`, 'success');
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير نصوص القروبات المؤقتة للبوت الثاني.`, 'success');
     }
 }
 
@@ -199,19 +199,29 @@ async function cleanOldLogs() {
     }
 }
 
+// 🔥 الجلب الذكي للبوت الثاني: يجلب الإعلان الجاهز سواء كان pending أو processing ولديه مجموعات
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
         .select('*')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: true })
-        .limit(1);
+        .or('status.eq.pending,status.eq.processing')
+        .order('created_at', { ascending: true });
 
     if (error) {
         await logToDashboard(`❌ [${ACCOUNT_NAME}] خطأ في جلب الطلب: ${error.message}`, 'error');
         return null;
     }
-    return (data && data.length > 0) ? data[0] : null;
+
+    if (data && data.length > 0) {
+        for (const post of data) {
+            let groups = [];
+            try { groups = JSON.parse(post.groups_json || '[]'); } catch(e) {}
+            if (groups.length > 0) {
+                return post; // العثور على إعلان يحتوي على مجموعات متبقية للنشر
+            }
+        }
+    }
+    return null;
 }
 
 async function updatePostStatus(id, status, extra = {}) {
@@ -223,8 +233,8 @@ async function updatePostStatus(id, status, extra = {}) {
 }
 
 async function openPostBox(page) {
-    await logToDashboard(`⏳ [${ACCOUNT_NAME}] إعطاء فيسبوك مهلة براحته لبناء الأزرار ومربع النشر...`, 'info');
-    app_sleep_time = randomDelay(12, 18); // 💡 التعديل: تقليل الـ 15000 إلى تأخير عشوائي ديناميكي
+    await logToDashboard(`⏳ [${ACCOUNT_NAME}] إعطاء فيسبوك مهلة لبناء الأزرار ومربع النشر...`, 'info');
+    const app_sleep_time = randomDelay(12, 18);
     await sleep(app_sleep_time); 
 
     const discussionTabs = [
@@ -239,7 +249,7 @@ async function openPostBox(page) {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
                 await tabBtn.click({ timeout: 4000, force: true });
-                await logToDashboard(`🔄 [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة) لتخطي واجهة البيع والشراء، ننتظر للاستقرار...`, 'info');
+                await logToDashboard(`🔄 [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)...`, 'info');
                 await sleep(randomDelay(10, 15)); 
                 break;
             }
@@ -280,7 +290,7 @@ async function openPostBox(page) {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
                 await element.click({ timeout: 5000, force: true });
-                await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح النافذة براحتها...`, 'info');
+                await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور...`, 'info');
                 await sleep(randomDelay(10, 15)); 
 
                 const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة'];
@@ -408,7 +418,6 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     
-    // 💡 التعديل: تقليل الـ 40 ثانية اللي تجمد البوت إلى 15-25 ثانية فقط.
     const loadWait = randomDelay(15, 25);
     await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار الصفحة...`, 'info');
     await sleep(loadWait); 
@@ -475,7 +484,7 @@ async function publishToGroup(page, group, post, imagePath) {
                 await logToDashboard(`⚠️ [${ACCOUNT_NAME}] استمرار الانتظار لمعاينة المرفق للاحتياط...`, 'info');
             }
             
-            const extraWait = randomDelay(15, 20); // تقليل من 30 ثانية
+            const extraWait = randomDelay(15, 20);
             await logToDashboard(`⏳ [${ACCOUNT_NAME}] ننتظر ${Math.round(extraWait/1000)} ثانية إضافية لاستقرار المعاينة...`, 'info');
             await sleep(extraWait); 
         } else {
@@ -485,11 +494,11 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await sleep(5000); 
 
-    // 🔥 2️⃣ فحص عمود ai_final_text أو صياغة النص ثم حفظه
-    let postText = post.ai_final_text || '';
+    // 🔥 2️⃣ فحص النص أو صياغته خصيصاً للبوت الثاني
+    let postText = post.ai_final_text_bot2 || post.ai_final_text || '';
     
     if (!postText || postText.trim() === '') {
-        await logToDashboard(`🧠 [AI] العمود ai_final_text فارغ، جاري صياغة نص جديد خصيصاً لمجموعة: ${group.name}...`, 'info');
+        await logToDashboard(`🧠 [AI] جاري صياغة نص جديد للبوت الثاني خصيصاً لمجموعة: ${group.name}...`, 'info');
         const aiGeneratedContent = await rewriteAdWithAI(post.ad_title, post.ad_description);
         postText = `${aiGeneratedContent}\n\n🔥 إعلان جديد على سوق الإعلانات الحديث`;
 
@@ -498,11 +507,12 @@ async function publishToGroup(page, group, post, imagePath) {
             postText += `\n\n${fbUrl.trim()}`;
         }
         
-        // حفظ النص النهائي المولد خصيصاً لهذه المجموعة في Supabase
-        await supabase.from('publish_queue').update({ ai_final_text: postText }).eq('id', post.id);
-        await logToDashboard(`💾 [Supabase] تم حفظ النص النهائي الخاص بهذه المجموعة في عمود (ai_final_text).`, 'success');
+        // حفظ النص المولد المخصص للبوت الثاني إن كان العمود موجوداً
+        try {
+            await supabase.from('publish_queue').update({ ai_final_text_bot2: postText }).eq('id', post.id);
+        } catch(e) {}
     } else {
-        await logToDashboard(`📌 [Supabase] تم جلب النص الجاهز من عمود (ai_final_text).`, 'success');
+        await logToDashboard(`📌 [Supabase] تم جلب النص الجاهز للبوت الثاني.`, 'success');
     }
 
     await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
@@ -512,12 +522,12 @@ async function publishToGroup(page, group, post, imagePath) {
     
     let fbUrlCheck = post.facebook_url || '';
     if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
-        const linkWait = randomDelay(25, 35); // تقليل من 45 ثانية
-        await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم إدراج رابط فيسبوك، ننتظر ${Math.round(linkWait/1000)} ثانية ليتفاعل النظام وتظهر المعاينة...`, 'info');
+        const linkWait = randomDelay(25, 35);
+        await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم إدراج رابط، ننتظر ${Math.round(linkWait/1000)} ثانية ليتفاعل النظام وتظهر المعاينة...`, 'info');
         await sleep(linkWait);
     } else {
-        const textWait = randomDelay(15, 20); // تقليل من 25 ثانية
-        await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية ليتفاعل النظام مع النص المُدخل...`, 'info');
+        const textWait = randomDelay(15, 20);
+        await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية...`, 'info');
         await sleep(textWait); 
     }
     
@@ -581,7 +591,6 @@ async function processOnePost(post) {
         await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
     }
 
-    // 🛡️ تشغيل المتصفح مع خيارات حماية الذاكرة لتفادي Status 137
     const browser = await chromium.launch({
         headless: true,
         args: [
@@ -613,7 +622,6 @@ async function processOnePost(post) {
         permissions: ['clipboard-read', 'clipboard-write']
     });
 
-    // 💡 التعديل لحماية الرام في Render: حظر (stylesheet, media, font) لتخفيف الحمل 80%
     await context.route('**/*', (route) => {
         const resourceType = route.request().resourceType();
         if (['font', 'stylesheet', 'media'].includes(resourceType)) {
@@ -691,12 +699,15 @@ async function processOnePost(post) {
             const targetGroup = remainingGroups[0];
             const newRemaining = remainingGroups.slice(1);
 
+            // 🔥 تخصيص سحب القروب للبوت الثاني في حقل bot2_group
+            const updatePayload = {
+                groups_json: JSON.stringify(newRemaining)
+            };
+            try { updatePayload.bot2_group = JSON.stringify(targetGroup); } catch(e) {}
+
             const { error: updateErr } = await supabase
                 .from('publish_queue')
-                .update({ 
-                    bot1_group: JSON.stringify(targetGroup),
-                    groups_json: JSON.stringify(newRemaining)
-                })
+                .update(updatePayload)
                 .eq('id', post.id);
 
             if (updateErr) {
@@ -704,7 +715,7 @@ async function processOnePost(post) {
                 continue;
             }
 
-            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) ونقلها إلى قروب البوت (bot1_group) وحذفها من الطابور الرئيسي فورا لضمان عدم التكرار.`, 'success');
+            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) الخاصة بـ البوت 2 وحذفها من الطابور لضمان التوازي.`, 'success');
 
             const page = await context.newPage();
             
@@ -715,13 +726,12 @@ async function processOnePost(post) {
             try {
                 const publishTask = publishToGroup(page, targetGroup, freshPost, imagePath);
                 const timeoutTask = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('تجمّد مفاجئ أو بطء شديد أثناء معالجة الصفحة (Deadlock Timeout)')), 360000)
+                    setTimeout(() => reject(new Error('تجمّد مفاجئ أثناء معالجة الصفحة (Timeout)')), 360000)
                 );
 
                 await Promise.race([publishTask, timeoutTask]);
                 successCount++;
             } catch (err) {
-                // 💡 التعديل: حماية التشيك بوينت لإيقاف الكود فوراً إذا اكتشف حظر
                 const isCheckpoint = err.message.includes('Checkpoint') || err.message.includes('تسجيل الدخول') || err.message.includes('login');
                 if (isCheckpoint) {
                     await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت! جاري إيقاف السيرفر لحماية الحساب...`, 'error');
@@ -735,19 +745,23 @@ async function processOnePost(post) {
                 await page.close();
                 await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم تدمير صفحة المجموعة.`, 'info');
 
-                // 🔥 التعديل التصفيري: تصفير ai_final_text بعد النشر في المجموعة لضمان توليد نص فريد للمجموعة القادمة
+                // 🔥 تصفير حقول البوت الثاني المخصصة بعد كل مجموعة
+                const resetPayload = {
+                    success_count: successCount,
+                    failed_count: failedCount,
+                    error_message: JSON.stringify(failedGroups)
+                };
+                try {
+                    resetPayload.bot2_group = null;
+                    resetPayload.ai_final_text_bot2 = null;
+                } catch(e) {}
+
                 await supabase
                     .from('publish_queue')
-                    .update({ 
-                        bot1_group: null,
-                        ai_final_text: null, // 🧹 تصفير النص ليتم إجبار الذكاء الاصطناعي على إعادة الصياغة من جديد
-                        success_count: successCount,
-                        failed_count: failedCount,
-                        error_message: JSON.stringify(failedGroups)
-                    })
+                    .update(resetPayload)
                     .eq('id', post.id);
             
-                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم تصفير قروب البوت وعمود النص (ai_final_text) وحفظ نقطة التوقف.`, 'info');
+                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات.`, 'info');
             }
 
             const { data: checkData } = await supabase.from('publish_queue').select('groups_json').eq('id', post.id).single();
@@ -757,13 +771,13 @@ async function processOnePost(post) {
             if (checkRemaining.length === 0) break;
 
             const delay = randomDelay(180, 300);
-            await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة أمان لحماية الحساب: انتظار ${Math.round(delay / 1000)} ثانية قبل المجموعة التالية...`, 'info');
+            await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة أمان: انتظار ${Math.round(delay / 1000)} ثانية قبل المجموعة التالية...`, 'info');
             await sleep(delay);
         }
     } finally {
         await context.close();
         await browser.close();
-        await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم إغلاق المتصفح وتفريغ الذاكرة بالكامل لنجاح العملية!`, 'success');
+        await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم إغلاق المتصفح وتفريغ الذاكرة بنجاح!`, 'success');
     }
 
     if (imagePath && fs.existsSync(imagePath)) {
@@ -775,16 +789,16 @@ async function processOnePost(post) {
     try { finalGroups = JSON.parse(finalPost.groups_json || '[]'); } catch(e){}
 
     if (finalGroups.length === 0 && failedCount === 0) {
-        await updatePostStatus(post.id, 'published', { published_at: new Date(), error_message: null, bot1_group: null, ai_final_text: null });
-        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم نشر الإعلان في كل المجموعات بنجاح تام وتصفير البيانات.`, 'success');
-    } else {
-        await updatePostStatus(post.id, 'failed', { error_message: JSON.stringify(failedGroups), bot1_group: null, ai_final_text: null });
-        await logToDashboard(`❌ [${ACCOUNT_NAME}] الإعلان لم يكتمل بنجاح تام (يوجد فشل). تم تعيين الحالة إلى (فشل).`, 'error');
+        await updatePostStatus(post.id, 'published', { published_at: new Date(), error_message: null });
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم نشر الإعلان في المجموعات بنجاح.`, 'success');
+    } else if (finalGroups.length === 0) {
+        await updatePostStatus(post.id, 'failed', { error_message: JSON.stringify(failedGroups) });
+        await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات. تم تغيير الحالة إلى (فشل).`, 'error');
     }
 }
 
 async function start() {
-    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي...`, 'info');
+    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثاني...`, 'info');
 
     await resetStuckPosts();
     await cleanOldLogs();
@@ -799,7 +813,7 @@ async function start() {
         if (!post) {
             idleLogTimer++;
             if (idleLogTimer >= 10) {
-                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات بحالة (Pending)... لا يوجد شيء حالياً.`, 'info');
+                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
                 idleLogTimer = 0;
             }
             await sleep(30000); 
@@ -818,8 +832,7 @@ async function start() {
 start().catch(async (err) => {
     console.error(err);
     try {
-        const { createClient } = require('@supabase/supabase-js');
         const emergencySupabase = createClient('https://bmsfhqmsovicpgxxwsgi.supabase.co', 'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef');
-        await emergencySupabase.from('bot_logs').insert([{ message: `❌ [${ACCOUNT_NAME}] توقف البوت بسبب خطأ عام غير متوقع: ${err.message}`, log_type: 'error' }]);
+        await emergencySupabase.from('bot_logs').insert([{ message: `❌ [${ACCOUNT_NAME}] توقف البوت بسبب خطأ غير متوقع: ${err.message}`, log_type: 'error' }]);
     } catch(e){}
 });
