@@ -585,8 +585,9 @@ async function processOnePost(post) {
     }
 
     const browser = await chromium.launch({
-        headless: true,
-        args: [
+    headless: true,
+    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/ms-playwright/chromium-1148/chrome-linux/chrome',
+    args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
