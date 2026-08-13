@@ -1,6 +1,4 @@
-const puppeteer = require('puppeteer-extra');
-const stealth = require('puppeteer-extra-plugin-stealth')();
-puppeteer.use(stealth);
+const { chromium } = require('playwright');
  
 const axios = require('axios');
 const fs = require('fs');
