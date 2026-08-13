@@ -1,7 +1,7 @@
-# استخدام صورة Playwright الرسمية بالإصدار المطابق لمكتبتك بالمليمتر
-FROM mcr.microsoft.com/playwright:v1.62.1-focal
+# استخدام صورة Playwright الرسمية مع نظام jammy الجديد
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy
 
-# 🚀 التحديث الجذري: ترقية Node.js داخل الحاوية إلى الإصدار 22 ليتوافق مع Supabase وإنهاء خطأ الـ WebSocket
+# ترقية Node.js داخل الحاوية إلى الإصدار 22 ليتوافق مع Supabase
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
 
 # تحديد مجلد العمل
@@ -10,7 +10,7 @@ WORKDIR /app
 # نسخ ملفات التعاريف
 COPY package*.json ./
 
-# تثبيت جميع المكتبات المذكورة في package.json والمكتبات الإضافية، بالإضافة لمكتبة ws كدعم إضافي
+# تثبيت جميع المكتبات
 RUN npm install
 RUN npm install playwright-extra puppeteer-extra-plugin-stealth ws
 
