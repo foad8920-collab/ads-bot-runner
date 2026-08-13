@@ -1,4 +1,6 @@
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+const stealth = require('puppeteer-extra-plugin-stealth')();
+chromium.use(stealth);
  
 const axios = require('axios');
 const fs = require('fs');
@@ -24,7 +26,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Instance - ${ACCOUNT_NAME} is running 24/7!`));
 
-// زر طوارئ: لإعادة تشغيل السيرفر وتفريغ الذاكرة فوراً يدوياً عند الحاجة
 app.get('/restart-bot', async (req, res) => {
     await logToDashboard(`🚨 [${ACCOUNT_NAME}] تم طلب إعادة التشغيل يدوياً من المطور!`, 'error');
     res.send(`🔄 جاري إعادة تشغيل السيرفر والبوت الخاص بـ ${ACCOUNT_NAME}...`);
@@ -34,7 +35,6 @@ app.get('/restart-bot', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🌐 Web Server active on port ${PORT} for ${ACCOUNT_NAME}`);
     
-    // 🌟 2. دالة التنبيه (Self-Ping) تعمل في الخلفية بشكل مستقل لمنع خمول السيرفر
     setInterval(async () => {
         try {
             const myServerUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`; 
@@ -43,7 +43,7 @@ app.listen(PORT, () => {
         } catch (e) {
             console.log(`⚠️ [Self-Ping] [${ACCOUNT_NAME}] فشل إرسال تنبيه الاستيقاظ:`, e.message);
         }
-    }, 300000); // تنبيه كل 5 دقائق
+    }, 300000);
 });
  
 const supabase = createClient(
@@ -63,12 +63,11 @@ function randomDelay(minSeconds, maxSeconds) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 🤖 دالة إعادة صياغة الإعلان
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
     if (!apiKey) {
-        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
+        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY.`, 'info');
         return `${title}\n\n${description}`;
     }
 
@@ -89,7 +88,7 @@ async function rewriteAdWithAI(title, description) {
         );
 
         if (validModels.length === 0) {
-            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص حالياً.`, 'info');
+            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص.`, 'info');
             return `${title}\n\n${description}`;
         }
 
@@ -119,10 +118,10 @@ async function rewriteAdWithAI(title, description) {
             }
         }
     } catch (e) {
-        console.error(`⚠️ [AI API Error]: فشل جلب قائمة النماذج. السبب: ${e.message}`);
+        console.error(`⚠️ [AI API Error]: فشل جلب قائمة النماذج.`);
     }
 
-    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة بالذكاء الاصطناعي بعد تجربة كل النماذج، سيتم استخدام النص الأصلي.`, 'info');
+    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة، سيتم استخدام النص الأصلي.`, 'info');
     return `${title}\n\n${description}`;
 }
 
@@ -180,7 +179,7 @@ async function resetStuckPosts() {
     if (error) {
         await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تنبيه أثناء تصفير الحقول المؤقتة: ${error.message}`, 'info');
     } else {
-        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير نصوص القروبات المؤقتة للبوت الثاني.`, 'success');
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور.`, 'success');
     }
 }
 
@@ -193,7 +192,7 @@ async function cleanOldLogs() {
         .lt('created_at', threeDaysAgo);
 
     if (!error) {
-        await logToDashboard(`🧹 [Auto-Cleanup] [${ACCOUNT_NAME}] تم تنظيف السجلات القديمة من قاعدة البيانات للحفاظ على المساحة.`, 'info');
+        await logToDashboard(`🧹 [Auto-Cleanup] [${ACCOUNT_NAME}] تم تنظيف السجلات القديمة.`, 'info');
     }
 }
 
@@ -231,8 +230,7 @@ async function updatePostStatus(id, status, extra = {}) {
 
 async function openPostBox(page) {
     await logToDashboard(`⏳ [${ACCOUNT_NAME}] إعطاء فيسبوك مهلة لبناء الأزرار ومربع النشر...`, 'info');
-    const app_sleep_time = randomDelay(12, 18);
-    await sleep(app_sleep_time); 
+    await sleep(randomDelay(12, 18)); 
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
@@ -424,7 +422,7 @@ async function publishToGroup(page, group, post, imagePath) {
     }
 
     const opened = await openPostBox(page);
-    if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
+    if (!opened) throw new Error('لم يتم العثور على مربع النشر');
 
     await sleep(randomDelay(3, 5)); 
 
@@ -481,7 +479,7 @@ async function publishToGroup(page, group, post, imagePath) {
             }
             
             const extraWait = randomDelay(15, 20);
-            await logToDashboard(`⏳ [${ACCOUNT_NAME}] ننتظر ${Math.round(extraWait/1000)} ثانية إضافية لاستقرار المعاينة...`, 'info');
+            await logToDashboard(`⏳ [${ACCOUNT_NAME}] ننتظر ${Math.round(extraWait/1000)} ثانية إضافية...`, 'info');
             await sleep(extraWait); 
         } else {
             await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تعذر العثور على حقل الـ input الصحيح للرفع`, 'error');
@@ -516,11 +514,10 @@ async function publishToGroup(page, group, post, imagePath) {
     let fbUrlCheck = post.facebook_url || '';
     if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
         const linkWait = randomDelay(25, 35);
-        await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم إدراج رابط، ننتظر ${Math.round(linkWait/1000)} ثانية ليتفاعل النظام وتظهر المعاينة...`, 'info');
+        await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم إدراج رابط، ننتظر ليتفاعل النظام وتظهر المعاينة...`, 'info');
         await sleep(linkWait);
     } else {
         const textWait = randomDelay(15, 20);
-        await logToDashboard(`⏳ [${ACCOUNT_NAME}] تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية...`, 'info');
         await sleep(textWait); 
     }
     
@@ -553,7 +550,7 @@ async function publishToGroup(page, group, post, imagePath) {
     let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov'));
     let finalWait = isUploadedVideo ? 60000 : 25000;
 
-    await logToDashboard(`⏳ [${ACCOUNT_NAME}] انتظار استقرار النشر لمدة ${finalWait/1000} ثانية لضمان إرسال المنشور...`, 'info');
+    await logToDashboard(`⏳ [${ACCOUNT_NAME}] انتظار استقرار النشر لضمان إرسال المنشور...`, 'info');
     await sleep(finalWait); 
     
     await logToDashboard(`✅ [${ACCOUNT_NAME}] تم النشر في المجموعة: ${group.name}`, 'success');
@@ -566,10 +563,10 @@ async function processOnePost(post) {
     let mediaUrl = '';
     if (post.ad_video && post.ad_video.trim() !== '') {
         mediaUrl = post.ad_video.trim();
-        await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (ad_video): ${mediaUrl}`, 'info');
+        await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس: ${mediaUrl}`, 'info');
     } else if (post.ad_image && post.ad_image.trim() !== '') {
         mediaUrl = post.ad_image.trim();
-        await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد رابط صورة في السوبيس (ad_image): ${mediaUrl}`, 'info');
+        await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد رابط صورة في السوبيس: ${mediaUrl}`, 'info');
     }
 
     let imagePath = null;
@@ -578,37 +575,23 @@ async function processOnePost(post) {
             imagePath = await downloadImage(mediaUrl);
             if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح: ${imagePath}`, 'success');
         } catch (err) {
-            await logToDashboard(`⚠️ [${ACCOUNT_NAME}] فشل تحميل الملف، سيتم النشر كنص فقط: ${err.message}`, 'info');
+            await logToDashboard(`⚠️ [${ACCOUNT_NAME}] فشل تحميل الملف: ${err.message}`, 'info');
         }
-    } else {
-        await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
     }
 
-   const browser = await chromium.launch({
+    const browser = await chromium.launch({
         headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-blink-features=AutomationControlled',
             '--disable-gpu',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-service-autorun',
-            '--password-store=basic',
+            '--disable-blink-features=AutomationControlled',
             '--single-process',
-            '--js-flags="--max-old-space-size=128"',
-            '--disable-extensions',
-            '--disable-component-extensions-with-background-pages',
-            '--disable-default-apps',
-            '--mute-audio',
-            '--no-zygote',
-            '--disable-accelerated-video-decode',
-            '--disable-infobars',
-            '--hide-scrollbars'
+            '--no-zygote'
         ]
     });
- 
+
     const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -625,7 +608,7 @@ async function processOnePost(post) {
 
     if (fs.existsSync(COOKIE_FILE)) {
         try {
-            await logToDashboard(`🍪 [${ACCOUNT_NAME}] جاري قراءة وتنسيق الكوكيز للحساب السحابي (${COOKIE_FILE})...`, 'info');
+            await logToDashboard(`🍪 [${ACCOUNT_NAME}] جاري قراءة الكوكيز (${COOKIE_FILE})...`, 'info');
             const cookiesString = fs.readFileSync(COOKIE_FILE, 'utf8');
             let rawCookies = JSON.parse(cookiesString);
             
@@ -645,12 +628,10 @@ async function processOnePost(post) {
             });
 
             await context.addCookies(formattedCookies);
-            await logToDashboard(`✅ [${ACCOUNT_NAME}] تم حقن الكوكيز بنجاح وتأمين الجلسة!`, 'success');
+            await logToDashboard(`✅ [${ACCOUNT_NAME}] تم حقن الكوكيز بنجاح!`, 'success');
         } catch (e) {
             await logToDashboard(`❌ [${ACCOUNT_NAME}] خطأ في معالجة الكوكيز: ${e.message}`, 'error');
         }
-    } else {
-        await logToDashboard(`⚠️ تنبيه: ملف الكوكيز (${COOKIE_FILE}) غير موجود.`, 'info');
     }
 
     let successCount = post.success_count || 0;
@@ -707,7 +688,7 @@ async function processOnePost(post) {
                 continue;
             }
 
-            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) الخاصة بـ البوت 2 وحذفها من الطابور لضمان التوازي.`, 'success');
+            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name})`, 'success');
 
             const page = await context.newPage();
             
