@@ -753,7 +753,7 @@ async function processOnePost(post) {
                 };
                 try {
                     resetPayload.bot2_group = null;
-                    resetPayload.ai_final_text_bot2 = null;
+                    resetPayload.ai_final_text2 = null;
                 } catch(e) {}
 
                 await supabase
