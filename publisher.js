@@ -84,13 +84,13 @@ async function incrementBotCounters() {
     } catch(e) {}
 }
 
-// 🟢 إرسال سجل النشر المباشر مع النص المعدل بواسطة جوجل AI في حقل ad_title
+// 🟢 إرسال سجل النشر المباشر مع اعتماد النص المعدل بواسطة جوجل AI حصراً في حقل ad_title
 async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null) {
     try {
         await supabase.from('bot_publish_logs').insert([{
             bot_name: BOT_DB_NAME,
             ad_id: post.id ? post.id.toString() : 'Unknown',
-            ad_title: aiModifiedText || post.ad_title || 'بدون عنوان',
+            ad_title: aiModifiedText || post.ai_final_text2 || post.ai_final_text || post.ad_title || 'بدون عنوان',
             group_name: groupName,
             status: statusMsg, // SUCCESS أو FAILED
             published_at: new Date()
@@ -885,6 +885,7 @@ async function processOnePost(post) {
                 await Promise.race([publishTask, timeoutTask]);
                 successCount++;
                 
+                // 🌟 التعديل هنا: تمرير النص المعدل بواسطة جوجل AI إلى دالة التسجيل لكي يظهر في ad_title
                 let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
                 await logPublishEvent(freshPost, targetGroup.name, 'SUCCESS', finalAiText);
                 await incrementBotCounters();
@@ -905,6 +906,7 @@ async function processOnePost(post) {
                 failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
+                // 🌟 التعديل هنا أيضاً في حالة الفشل لتسجيل النص المعدل بالـ AI
                 let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
                 await logPublishEvent(freshPost, targetGroup.name, 'FAILED', finalAiText);
 
