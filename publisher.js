@@ -594,8 +594,11 @@ async function processOnePost(post) {
     await updatePostStatus(post.id, 'processing', { started_at: new Date() });
 
     let mediaUrl = '';
+    let isVideoPost = false; // 💡 متغير جديد لتمييز الفيديو عن الصورة
+
     if (post.ad_video && post.ad_video.trim() !== '') {
         mediaUrl = post.ad_video.trim();
+        isVideoPost = true; // 💡 تأكيد قاطع أن هذا فيديو
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (ad_video): ${mediaUrl}`, 'info');
     } else if (post.ad_image && post.ad_image.trim() !== '') {
         mediaUrl = post.ad_image.trim();
@@ -605,7 +608,8 @@ async function processOnePost(post) {
     let imagePath = null;
     if (mediaUrl !== '') {
         try {
-            imagePath = await downloadImage(mediaUrl);
+            // 💡 نمرر حقيقة أنه فيديو للدالة كي تحفظه بالامتداد الصحيح
+            imagePath = await downloadImage(mediaUrl, isVideoPost);
             if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح: ${imagePath}`, 'success');
         } catch (err) {
             await logToDashboard(`⚠️ [${ACCOUNT_NAME}] فشل تحميل الملف، سيتم النشر كنص فقط: ${err.message}`, 'info');
@@ -614,7 +618,7 @@ async function processOnePost(post) {
         await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
     }
 
-    // 💡 إطلاق المتصفح بشكل نظيف ليتم ربطه بالمتصفح الذي جهزناه في أول الملف
+    // هنا يبدأ إطلاق المتصفح (لا تغير فيه شيء، اتركه كما هو عندك)
     const browser = await chromium.launch({
         headless: true,
         args: [
