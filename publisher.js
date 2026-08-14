@@ -148,14 +148,14 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🟢 دالة نوم ذكية تفحص زر الإيقاف (IDLE أو PAUSE) كل 5 ثوانٍ أثناء أي فترة انتظار لمنع التعليق
+// 🟢 دالة نوم ذكية تفحص أمر الإيقاف (IDLE) كل 5 ثوانٍ أثناء أي فترة انتظار لمنع التعليق
 async function smartSleep(ms) {
     const checkInterval = 5000; 
     let elapsed = 0;
     
     while (elapsed < ms) {
         let currentStatus = await getBotStatus();
-        if (currentStatus === 'IDLE' || currentStatus === 'PAUSE' || currentStatus === 'PAUSED') {
+        if (currentStatus === 'IDLE') {
             throw new Error('STOPPED_BY_USER');
         }
         await sleep(checkInterval);
@@ -824,16 +824,11 @@ async function processOnePost(post) {
                 break;
             }
 
-            // 🛑 2. الاستشعار الديناميكي لحالة اللوحة (IDLE / PAUSE) قبل كل مجموعة
+            // 🛑 2. الاستشعار الديناميكي لحالة اللوحة (IDLE) قبل كل مجموعة
             let currentStatus = await getBotStatus();
-            
-            // ⏸️ معالجة التوقف المؤقت (PAUSE) أو الإيقاف (IDLE)
-            while (currentStatus === 'PAUSE' || currentStatus === 'PAUSED' || currentStatus === 'IDLE') {
-                await logToDashboard(`⏸️ [${ACCOUNT_NAME}] البوت توقف بناءً على أمر اللوحة (${currentStatus})...`, 'info');
-                await updateBotLastActive(currentStatus); 
-                await sleep(10000); 
-                currentStatus = await getBotStatus(); 
-                if (currentStatus === 'RUNNING') break;
+            if (currentStatus === 'IDLE') {
+                await logToDashboard(`🛑 [${ACCOUNT_NAME}] تم رصد أمر إيقاف (IDLE) من اللوحة، جاري الانسحاب...`, 'info');
+                break;
             }
 
             const { data: freshPost, error: fetchErr } = await supabase
@@ -998,7 +993,7 @@ async function start() {
             continue;
         }
 
-        // 🛑 2. فحص مستمر لحالة (IDLE أو PAUSE) في وضع الانتظار
+        // 🛑 2. فحص مستمر لحالة (IDLE) في وضع الانتظار
         let currentStatus = await getBotStatus();
         
         if (currentStatus === 'IDLE') {
@@ -1009,13 +1004,6 @@ async function start() {
                 idleLogTimer = 0;
             }
             await sleep(30000); 
-            continue;
-        }
-
-        if (currentStatus === 'PAUSE' || currentStatus === 'PAUSED') {
-            await updateBotLastActive('PAUSED');
-            await logToDashboard(`⏸️ [${ACCOUNT_NAME}] البوت في حالة (توقف مؤقت - PAUSE). ننتظر أمر الاستئناف...`, 'info');
-            await sleep(30000);
             continue;
         }
 
@@ -1034,7 +1022,7 @@ async function start() {
 
         await processOnePost(post);
 
-        // الانتظار بين إعلان كامل (بمجموعاته) وإعلان جديد عبر النوم الذكي لتفادي تعليق زر الإيقاف
+        // الانتظار بين إعلان كامل (بمجموعاته) وإعلان جديد
         const delay = randomDelay(1200, 2400); // 20 إلى 40 دقيقة
         await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة الإعلانات الكبرى: انتظار ${Math.round(delay / 1000 / 60)} دقيقة...`, 'info');
         try {
