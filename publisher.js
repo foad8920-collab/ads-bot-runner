@@ -155,20 +155,22 @@ async function logToDashboard(message, type = 'info') {
     } catch (e) {}
 }
 
-async function downloadImage(imageUrl) {
+// 🤖 دالة تحميل الملفات (معدلة لضمان عدم تحويل الفيديو إلى صورة)
+async function downloadImage(imageUrl, isVideo = false) {
     if (!imageUrl) return null;
     if (!fs.existsSync(TEMP_DIR)) {
         fs.mkdirSync(TEMP_DIR, { recursive: true });
     }
     
-    let ext = '.jpg';
+    // 💡 السر هنا: إذا كان المصدر هو حقل ad_video، الامتداد سيكون .mp4 حصراً
+    let ext = isVideo ? '.mp4' : '.jpg';
+    
     const lowerUrl = imageUrl.toLowerCase();
-    if (lowerUrl.includes('.mp4') || lowerUrl.includes('ik-video')) ext = '.mp4';
-    else if (lowerUrl.includes('.mov')) ext = '.mov';
-    else if (lowerUrl.includes('.webp') || lowerUrl.includes('f-webp')) ext = '.webp';
-    else if (lowerUrl.includes('.png')) ext = '.png';
+    if (lowerUrl.includes('.mov')) ext = '.mov';
+    else if (!isVideo && lowerUrl.includes('.png')) ext = '.png';
+    else if (!isVideo && (lowerUrl.includes('.webp') || lowerUrl.includes('f-webp'))) ext = '.webp';
 
-    const imagePath = path.join(TEMP_DIR, `ad-image-${Date.now()}${ext}`);
+    const imagePath = path.join(TEMP_DIR, `ad-media-${Date.now()}${ext}`);
     
     const response = await axios({
         url: imageUrl,
