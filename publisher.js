@@ -950,7 +950,7 @@ async function processOnePost(post) {
 
             if (checkRemaining.length === 0) break;
 
-            // ⚠️ التغيير الأهم: الانتظار بين كل مجموعة ومجموعة
+            // ⚠️ التغيير: الانتظار بين كل مجموعة ومجموعة
             const delay = randomDelay(420, 720); // 7 إلى 12 دقيقة
             await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة أمان: انتظار ${Math.round(delay / 1000 / 60)} دقيقة قبل المجموعة التالية...`, 'info');
             await sleep(delay);
@@ -990,7 +990,7 @@ async function start() {
     let idleLogTimer = 0; 
 
     while (true) {
-        // 🛑 فحص الحد اليومي (15 مجموعة) أولاً
+        // 🛑 1. فحص الحد اليومي (15 مجموعة) أولاً
         const limitReached = await checkDailyLimit();
         if (limitReached) {
             idleLogTimer++;
@@ -1004,7 +1004,7 @@ async function start() {
             continue;
         }
 
-        // 🛑 🟢 فحص مستمر لحالة (IDLE أو PAUSE) في وضع الانتظار
+        // 🛑 2. فحص مستمر لحالة (IDLE أو PAUSE) في وضع الانتظار
         let currentStatus = await getBotStatus();
         
         if (currentStatus === 'IDLE') {
@@ -1032,7 +1032,8 @@ async function start() {
                 await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
                 idleLogTimer = 0;
             }
-            await updateBotLastActive(); 
+            // 🟢 إبلاغ اللوحة أننا خاملون لعدم وجود شغل
+            await updateBotLastActive('IDLE');
             await sleep(30000); 
             continue;
         }
@@ -1040,8 +1041,10 @@ async function start() {
 
         await processOnePost(post);
 
-        // تم حذف السطر القسري لـ PENDING
-        // بعد انتهاء الإعلان، سيعود loop ويشيك على الحد اليومي ثم على وجود إعلانات جديدة
+        // 🟢 إبلاغ اللوحة بالعودة للانتظار بعد انتهاء الإعلان
+        await updateBotLastActive('RUNNING');
+
+        // الانتظار بين إعلان كامل (بمجموعاته) وإعلان جديد
         const delay = randomDelay(1200, 2400); // 20 إلى 40 دقيقة
         await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة الإعلانات الكبرى: انتظار ${Math.round(delay / 1000 / 60)} دقيقة...`, 'info');
         await sleep(delay);
