@@ -26,18 +26,10 @@ const { createClient } = require('@supabase/supabase-js');
 const ACCOUNT_NUM = process.env.ACCOUNT_NUMBER || '2';
 const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) ? `./cookies${ACCOUNT_NUM}.json` : './cookies2.json';
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
-const BOT_DB_NAME = `bot${ACCOUNT_NUM}`; // 🟢 استخراج اسم البوت (مثلاً: bot2) لمطابقة الجداول في لوحة التحكم
-
-// 🧠 0. دالة حساب استهلاك الذاكرة (RAM Tracker)
-function getMemoryLog() {
-    const memory = process.memoryUsage();
-    const rssMB = (memory.rss / 1024 / 1024).toFixed(1);
-    const heapMB = (memory.heapUsed / 1024 / 1024).toFixed(1);
-    return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
-}
+const BOT_DB_NAME = `bot${ACCOUNT_NUM}`; // 🟢 استخراج اسم البوت (bot2) لمطابقة جداول اللوحة
 
 // -------------------------------------------------------------------------
-// 🔗 دوال الربط بلوحة التحكم (Dashboard Integration) 🟢
+// 🔗 دوال الربط بلوحة التحكم المركزية 🟢 (حُقنت هنا دون مساس بالكود الأصلي)
 // -------------------------------------------------------------------------
 
 async function getBotStatus() {
@@ -46,15 +38,15 @@ async function getBotStatus() {
         .select('status')
         .eq('bot_name', BOT_DB_NAME)
         .single();
-    if (error || !data) return 'ACTIVE'; // افتراضي للتشغيل إذا لم يجد السجل
-    return data.status ? data.status.toUpperCase() : 'ACTIVE';
+    if (error || !data || !data.status) return 'IDLE'; 
+    return data.status.toUpperCase();
 }
 
-async function updateBotLastActive() {
-    await supabase.from('bot_counters').upsert({
-        bot_name: BOT_DB_NAME,
-        last_active: new Date()
-    }, { onConflict: 'bot_name' });
+async function updateBotLastActive(forceStatus = null) {
+    const updateData = { bot_name: BOT_DB_NAME, last_active: new Date() };
+    if (forceStatus) updateData.status = forceStatus;
+    
+    await supabase.from('bot_counters').upsert(updateData, { onConflict: 'bot_name' });
 }
 
 async function incrementBotCounters() {
@@ -86,6 +78,14 @@ async function logPublishEvent(post, groupName, statusMsg) {
 }
 // -------------------------------------------------------------------------
 
+// 🧠 0. دالة حساب استهلاك الذاكرة (RAM Tracker)
+function getMemoryLog() {
+    const memory = process.memoryUsage();
+    const rssMB = (memory.rss / 1024 / 1024).toFixed(1);
+    const heapMB = (memory.heapUsed / 1024 / 1024).toFixed(1);
+    return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
+}
+
 // 🌟 1. تشغيل سيرفر ويب خفيف لمنع الخمول
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -104,10 +104,12 @@ app.listen(PORT, () => {
     // 🌟 2. دالة التنبيه (Self-Ping) تعمل في الخلفية بشكل مستقل لمنع خمول السيرفر
     setInterval(async () => {
         try {
-            const myServerUrl = process.env.RENDER_EXTERNAL_URL || process.env.RAILWAY_STATIC_URL || `http://localhost:${PORT}`; 
+            const myServerUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`; 
             await axios.get(myServerUrl);
             await logToDashboard(`⏰ [Self-Ping] [${ACCOUNT_NAME}] تم تنبيه السيرفر بنجاح للحفاظ عليه مستيقظاً.`, 'info');
-            await updateBotLastActive(); // 🟢 تحديث نبضة الحياة للوحة التحكم المركزية
+            
+            // 🟢 إرسال نبضة للوحة التحكم ليعلم النظام أن السيرفر حي
+            await updateBotLastActive();
         } catch (e) {
             console.log(`⚠️ [Self-Ping] [${ACCOUNT_NAME}] فشل إرسال تنبيه الاستيقاظ:`, e.message);
         }
@@ -244,7 +246,8 @@ async function resetStuckPosts() {
     await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت الثاني المتبقية (bot2_group)...`, 'info');
     const { error } = await supabase
         .from('publish_queue')
-        .update({ bot2_group: null, ai_final_text2: null })
+        // 🟢 التعديل: تصفير حالة البوت الثاني أيضاً (bot2_status)
+        .update({ bot2_group: null, ai_final_text2: null, bot2_status: null })
         .not('bot2_group', 'is', null);
 
     if (error) {
@@ -292,10 +295,11 @@ async function getNextPendingPost() {
     return null;
 }
 
+// 🟢 التعديل الدقيق لحماية العمود الرئيسي: التحديث هنا يطال bot2_status الخاص بالبوت الثاني فقط كما أردت
 async function updatePostStatus(id, status, extra = {}) {
     const { error } = await supabase
         .from('publish_queue')
-        .update({ status, ...extra })
+        .update({ bot2_status: status, ...extra }) // 🟢 استخدام bot2_status
         .eq('id', id);
     if (error) await logToDashboard(`⚠️ [${ACCOUNT_NAME}] خطأ تحديث الحالة: ${error.message}`, 'error');
 }
@@ -519,7 +523,7 @@ async function publishToGroup(page, group, post, imagePath) {
             try {
                 const trigElement = page.locator(trigSel).first();
                 if (await trigElement.count() > 0 && await trigElement.isVisible()) {
-                    await trigElement.click({ timeout: 5000 }); 
+                    await trigElement.click({ timeout: 5000 }); // بدون force: true
                     await sleep(randomDelay(4, 7)); 
                     break;
                 }
@@ -676,7 +680,10 @@ async function publishToGroup(page, group, post, imagePath) {
 
 async function processOnePost(post) {
     await logToDashboard(`🔥 [${ACCOUNT_NAME}] بدأ معالجة الإعلان: ${post.ad_title}`, 'info');
-    await updatePostStatus(post.id, 'processing', { started_at: new Date() });
+    
+    // 🟢 التعديل: تحديث الحالة في الداتابيز للإعلان (bot2_status) ولوحة التحكم
+    await updatePostStatus(post.id, 'RUNNING', { started_at: new Date() });
+    await updateBotLastActive('RUNNING');
 
     let mediaUrl = '';
     let isVideoPost = false; // 💡 متغير جديد لتمييز الفيديو عن الصورة
@@ -790,11 +797,22 @@ async function processOnePost(post) {
 
     try {
         while (true) {
-            // 🛑 🟢 التعديل الأهم: فحص حالة (IDLE) قبل الشروع في نشر المجموعة
-            const currentStatus = await getBotStatus();
+            
+            // 🛑 🟢 الاستشعار الديناميكي لحالة اللوحة (IDLE / PAUSE) قبل كل مجموعة
+            let currentStatus = await getBotStatus();
+            
+            // ⏸️ معالجة التوقف المؤقت (PAUSE)
+            while (currentStatus === 'PAUSE' || currentStatus === 'PAUSED') {
+                await logToDashboard(`⏸️ [${ACCOUNT_NAME}] البوت في حالة (توقف مؤقت - PAUSE). ننتظر أمر الاستئناف من اللوحة...`, 'info');
+                await updateBotLastActive(); 
+                await sleep(30000); 
+                currentStatus = await getBotStatus(); 
+            }
+
+            // 🛑 معالجة التوقف النهائي (IDLE)
             if (currentStatus === 'IDLE') {
-                await logToDashboard(`🛑 [${ACCOUNT_NAME}] تم تلقي أمر (IDLE) من لوحة التحكم! جاري إيقاف عملية النشر بأمان والعودة للانتظار...`, 'info');
-                break; // 🟢 كسر حلقة النشر الحالية لإغلاق المتصفح والعودة لوضع السبات
+                await logToDashboard(`🛑 [${ACCOUNT_NAME}] تم تلقي أمر (IDLE)! جاري الانسحاب وإغلاق المتصفح...`, 'info');
+                break; // نكسر الحلقة لكي يغلق البوت المتصفح وينام في الخارج
             }
 
             const { data: freshPost, error: fetchErr } = await supabase
@@ -920,11 +938,13 @@ async function processOnePost(post) {
     try { finalGroups = JSON.parse(finalPost.groups_json || '[]'); } catch(e){}
 
     if (finalGroups.length === 0 && failedCount === 0) {
-        await updatePostStatus(post.id, 'published', { published_at: new Date(), error_message: null });
+        // 🟢 التعديل: تحديث عمود البوت الثاني ليكون COMPLETED عند الانتهاء كلياً بنجاح
+        await updatePostStatus(post.id, 'COMPLETED', { published_at: new Date(), error_message: null });
         await logToDashboard(`✅ [${ACCOUNT_NAME}] تم نشر الإعلان في المجموعات بنجاح.`, 'success');
     } else if (finalGroups.length === 0) {
-        await updatePostStatus(post.id, 'failed', { error_message: JSON.stringify(failedGroups) });
-        await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات. تم تغيير الحالة إلى (فشل).`, 'error');
+        // 🟢 التعديل: تحديث عمود البوت الثاني ليكون FAILED
+        await updatePostStatus(post.id, 'FAILED', { error_message: JSON.stringify(failedGroups) });
+        await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات. تم تغيير الحالة إلى (FAILED).`, 'error');
     }
 }
 
@@ -940,16 +960,24 @@ async function start() {
     let idleLogTimer = 0; 
 
     while (true) {
-        // 🛑 🟢 التعديل الأهم: فحص مستمر لحالة (IDLE) من لوحة التحكم في وضع الانتظار
-        const currentStatus = await getBotStatus();
+        // 🛑 🟢 فحص مستمر لحالة (IDLE أو PAUSE) في وضع الانتظار
+        let currentStatus = await getBotStatus();
+        
         if (currentStatus === 'IDLE') {
-            await updateBotLastActive(); // إرسال نبضة حية للوحة لتأكيد أن السيرفر يعمل
+            await updateBotLastActive(); // نبضة حية ليعرف السيرفر أن البوت متصل
             idleLogTimer++;
             if (idleLogTimer >= 10) {
-                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت في وضع (IDLE) بناءً على أمر من لوحة التحكم. ننتظر أمر التشغيل...`, 'info');
+                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت في حالة (IDLE). ننتظر أمر تشغيل من لوحة التحكم...`, 'info');
                 idleLogTimer = 0;
             }
-            await sleep(30000); // 🟢 ينام 30 ثانية قبل الفحص من جديد
+            await sleep(30000); 
+            continue;
+        }
+
+        if (currentStatus === 'PAUSE' || currentStatus === 'PAUSED') {
+            await updateBotLastActive();
+            await logToDashboard(`⏸️ [${ACCOUNT_NAME}] البوت في حالة (توقف مؤقت - PAUSE). ننتظر أمر الاستئناف...`, 'info');
+            await sleep(30000);
             continue;
         }
 
@@ -960,13 +988,17 @@ async function start() {
                 await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
                 idleLogTimer = 0;
             }
-            await updateBotLastActive(); // 🟢 نبضة للوحة حتى لو الطابور فارغ
+            // 🟢 إبلاغ اللوحة أن البوت جاهز وينتظر
+            await updateBotLastActive('PENDING');
             await sleep(30000); 
             continue;
         }
         idleLogTimer = 0; 
 
         await processOnePost(post);
+
+        // 🟢 إبلاغ اللوحة بالعودة للانتظار بعد انتهاء الإعلان
+        await updateBotLastActive('PENDING');
 
         // الانتظار بين إعلان كامل (بمجموعاته) وإعلان جديد
         // تم رفعه ليكون بين 20 إلى 40 دقيقة
