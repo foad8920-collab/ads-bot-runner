@@ -3,7 +3,6 @@ process.env.PLAYWRIGHT_BROWSERS_PATH = '/tmp/pw-browsers';
 const { execSync } = require('child_process');
 try {
     console.log("🚀 [النظام] جاري تجهيز المتصفح في مسار آمن لتجاوز أخطاء مسح Railway...");
-    // هذا الأمر سينزل المتصفح في الـ /tmp المحمي في كل مرة يعمل فيها السيرفر
     execSync('npx playwright install chromium', { stdio: 'inherit' });
     console.log("✅ [النظام] المتصفح جاهز ومحمي من الحذف 100%!");
 } catch (e) {
@@ -583,7 +582,7 @@ async function publishToGroup(page, group, post, imagePath) {
             const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov');
             const waitTime = isVideoFile ? 65000 : 35000;
             
-            await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف وبدء الاستقرار...`, 'success');
+            await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم إدراج الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف وبدء الاستقرار...`, 'success');
             await smartSleep(waitTime);
             
             try {
@@ -885,9 +884,11 @@ async function processOnePost(post) {
                 await Promise.race([publishTask, timeoutTask]);
                 successCount++;
                 
-                // 🌟 التعديل هنا: تمرير النص المعدل بواسطة جوجل AI إلى دالة التسجيل لكي يظهر في ad_title
-                let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
-                await logPublishEvent(freshPost, targetGroup.name, 'SUCCESS', finalAiText);
+                // جلب أحدث بيانات الإعلان لضمان توفر النص المعدل بالـ AI لتسجيله في ad_title في جدول bot_publish_logs
+                const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
+                let finalAiText = latestPost?.ai_final_text2 || latestPost?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
+                
+                await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText);
                 await incrementBotCounters();
 
             } catch (err) {
@@ -906,9 +907,10 @@ async function processOnePost(post) {
                 failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
-                // 🌟 التعديل هنا أيضاً في حالة الفشل لتسجيل النص المعدل بالـ AI
-                let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
-                await logPublishEvent(freshPost, targetGroup.name, 'FAILED', finalAiText);
+                const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
+                let finalAiTextFail = latestPostFail?.ai_final_text2 || latestPostFail?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
+                
+                await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail);
 
             } finally {
                 await page.close();
