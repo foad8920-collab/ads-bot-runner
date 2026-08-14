@@ -541,6 +541,12 @@ async function publishToGroup(page, group, post, imagePath) {
     // 3️⃣ لصق النص والانتظار للتفاعل
     await pasteTextWithLines(page, postText);
     
+    // 💡 خدعة برمجية: النقر على مسافة ثم التراجع لتنبيه نظام فيسبوك (React onChange) أن النص تم إدخاله وتفعيل زر النشر
+    await page.keyboard.press('Space');
+    await sleep(500);
+    await page.keyboard.press('Backspace');
+    await sleep(1000);
+
     let fbUrlCheck = post.facebook_url || '';
     if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
         // الروابط تحتاج وقتا أطول ليتم سحب بيانات المعاينة الخاصة بها
@@ -555,10 +561,12 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await sleep(randomDelay(7, 12)); 
 
+    // 4️⃣ الضغط على زر النشر (التعديل الجوهري والأهم لحل مشكلة المنشورات الشبحية)
     const publishButtons = [
+        'div[role="dialog"] div[role="button"][aria-label="نشر"]',
+        'div[role="dialog"] div[role="button"][aria-label="Post"]',
         'div[role="dialog"] div[role="button"]:has-text("نشر")',
         'div[role="dialog"] div[role="button"]:has-text("Post")',
-        'div[role="dialog"] div[role="button"]:has-text("Publish")',
         'div[aria-label="نشر"]',
         'div[aria-label="Post"]',
         'text=نشر', 'text=Post', 'text=Publish'
@@ -567,26 +575,51 @@ async function publishToGroup(page, group, post, imagePath) {
     let published = false;
     for (const btn of publishButtons) {
         try {
-            const button = page.locator(btn).last();
+            // نستخدم first بدلا من last لضمان التركيز على الزر الرئيسي
+            const button = page.locator(btn).first();
             if (await button.count() > 0 && await button.isVisible()) {
-                await button.click({ timeout: 6000, force: true });
+                
+                // 💡 الفحص الحاسم: هل الزر معطل (رمادي)؟
+                let isDisabled = await button.getAttribute('aria-disabled');
+                let retries = 0;
+                while (isDisabled === 'true' && retries < 6) { // ننتظر حتى 30 ثانية
+                    await logToDashboard(`⏳ [${ACCOUNT_NAME}] زر النشر غير مفعل (رمادي)، ننتظر معالجة فيسبوك... (محاولة ${retries + 1}/6)`, 'info');
+                    await sleep(5000);
+                    isDisabled = await button.getAttribute('aria-disabled');
+                    retries++;
+                }
+
+                if (isDisabled === 'true') {
+                    throw new Error('زر النشر استمر معطلاً (رمادي) لفترة طويلة، قد يكون هناك نقص في الحقول أو مشكلة في الملف.');
+                }
+
+                // 💡 النقر الطبيعي بدون القوة الغاشمة (بدون force: true)
+                await button.click({ timeout: 10000 });
                 published = true;
-                await logToDashboard(`🚀 [${ACCOUNT_NAME}] تم الضغط على زر النشر النهائي`, 'success');
+                await logToDashboard(`🚀 [${ACCOUNT_NAME}] تم النقر على زر النشر بطريقة شرعية!`, 'success');
                 break;
             }
-        } catch (e) {}
+        } catch (e) {
+            if (e.message.includes('زر النشر استمر معطلاً')) {
+                throw e; // تمرير الخطأ للخارج
+            }
+        }
     }
 
-    if (!published) throw new Error('فشل العثور على زر النشر أو تعذر الضغط عليه');
+    if (!published) throw new Error('فشل العثور على زر النشر، أو أن الزر غير موجود بالصفحة.');
     
-    // رفع مهلة انتظار التأكيد
-    let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov'));
-    let finalWait = isUploadedVideo ? 65000 : 35000;
+    // 💡 التحقق القاطع من النجاح: انتظار اختفاء نافذة النشر من قبل فيسبوك
+    await logToDashboard(`⏳ [${ACCOUNT_NAME}] انتظار إغلاق نافذة النشر من قبل فيسبوك لتأكيد وصول المنشور...`, 'info');
+    try {
+        await page.waitForSelector('div[role="dialog"]', { state: 'hidden', timeout: 60000 });
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] اختفت نافذة النشر بنجاح! المنشور الآن في المجموعة.`, 'success');
+    } catch (e) {
+        throw new Error('تم النقر على النشر لكن نافذة فيسبوك لم تُغلق! (إما أن المنشور يحتاج موافقة أدمن وتأخر، أو حدث خطأ مخفي في فيسبوك)');
+    }
 
-    await logToDashboard(`⏳ [${ACCOUNT_NAME}] انتظار استقرار النشر لمدة ${finalWait/1000} ثانية لضمان إرسال المنشور...`, 'info');
+    let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov'));
+    let finalWait = isUploadedVideo ? 15000 : 10000;
     await sleep(finalWait); 
-    
-    await logToDashboard(`✅ [${ACCOUNT_NAME}] تم النشر في المجموعة: ${group.name}`, 'success');
 }
 
 async function processOnePost(post) {
@@ -618,7 +651,7 @@ async function processOnePost(post) {
         await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
     }
 
-    // هنا يبدأ إطلاق المتصفح (لا تغير فيه شيء، اتركه كما هو عندك)
+    // 💡 إطلاق المتصفح بشكل نظيف ليتم ربطه بالمتصفح الذي جهزناه في أول الملف
     const browser = await chromium.launch({
         headless: true,
         args: [
