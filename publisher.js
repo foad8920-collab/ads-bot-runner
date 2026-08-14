@@ -49,27 +49,48 @@ async function updateBotLastActive(forceStatus = null) {
     await supabase.from('bot_counters').upsert(updateData, { onConflict: 'bot_name' });
 }
 
+// 🟢 حارس الحد اليومي (15 مجموعة كحد أقصى)
+async function checkDailyLimit() {
+    try {
+        const { data, error } = await supabase
+            .from('bot_counters')
+            .select('daily_count')
+            .eq('bot_name', BOT_DB_NAME)
+            .single();
+        if (data && data.daily_count >= 15) {
+            return true;
+        }
+    } catch(e) {}
+    return false;
+}
+
 async function incrementBotCounters() {
     try {
         const { data, error } = await supabase.from('bot_counters').select('daily_count, total_count').eq('bot_name', BOT_DB_NAME).single();
         let daily = (data && data.daily_count) ? data.daily_count : 0;
         let total = (data && data.total_count) ? data.total_count : 0;
         
+        const newDaily = daily + 1;
+        const newTotal = total + 1;
+        const targetStatus = newDaily >= 15 ? 'IDLE' : 'RUNNING';
+
         await supabase.from('bot_counters').upsert({
             bot_name: BOT_DB_NAME,
-            daily_count: daily + 1,
-            total_count: total + 1,
-            last_active: new Date()
+            daily_count: newDaily,
+            total_count: newTotal,
+            last_active: new Date(),
+            status: targetStatus
         }, { onConflict: 'bot_name' });
     } catch(e) {}
 }
 
-async function logPublishEvent(post, groupName, statusMsg) {
+// 🟢 إرسال سجل النشر المباشر مع النص المعدل بواسطة جوجل AI في حقل ad_title
+async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null) {
     try {
         await supabase.from('bot_publish_logs').insert([{
             bot_name: BOT_DB_NAME,
             ad_id: post.id ? post.id.toString() : 'Unknown',
-            ad_title: post.ad_title || 'بدون عنوان',
+            ad_title: aiModifiedText || post.ad_title || 'بدون عنوان',
             group_name: groupName,
             status: statusMsg, // SUCCESS أو FAILED
             published_at: new Date()
@@ -798,7 +819,15 @@ async function processOnePost(post) {
     try {
         while (true) {
             
-            // 🛑 🟢 الاستشعار الديناميكي لحالة اللوحة (IDLE / PAUSE) قبل كل مجموعة
+            // 🛑 1. فحص الحد اليومي (15 مجموعة)
+            const limitReached = await checkDailyLimit();
+            if (limitReached) {
+                await logToDashboard(`🛑 [${ACCOUNT_NAME}] تم الوصول للحد الأقصى اليومي (15 مجموعة). جاري إيقاف البوت وتحويله إلى IDLE...`, 'error');
+                await updateBotLastActive('IDLE');
+                break;
+            }
+
+            // 🛑 2. الاستشعار الديناميكي لحالة اللوحة (IDLE / PAUSE) قبل كل مجموعة
             let currentStatus = await getBotStatus();
             
             // ⏸️ معالجة التوقف المؤقت (PAUSE)
@@ -870,8 +899,11 @@ async function processOnePost(post) {
                 await Promise.race([publishTask, timeoutTask]);
                 successCount++;
                 
-                // 📊 🟢 حقن لوحة التحكم: إرسال سجل النشر المباشر (نجاح) وزيادة العدادات
-                await logPublishEvent(freshPost, targetGroup.name, 'SUCCESS');
+                // 📊 جلب النص النهائي الفعلي الذي تم نشره لتسجيله في السجل الحي
+                let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
+
+                // 📊 🟢 حقن لوحة التحكم: إرسال سجل النشر المباشر (نجاح) مع النص المعدل وزيادة العدادات
+                await logPublishEvent(freshPost, targetGroup.name, 'SUCCESS', finalAiText);
                 await incrementBotCounters();
 
             } catch (err) {
@@ -885,14 +917,15 @@ async function processOnePost(post) {
                 failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
-                // 📊 🔴 حقن لوحة التحكم: إرسال السجل المباشر (فشل)
-                await logPublishEvent(freshPost, targetGroup.name, 'FAILED');
+                // 📊 🔴 حقن لوحة التحكم: إرسال السجل المباشر (فشل) مع السبب والنص المعدل
+                let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
+                await logPublishEvent(freshPost, targetGroup.name, 'FAILED', finalAiText);
 
             } finally {
                 await page.close();
                 await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم تدمير صفحة المجموعة.`, 'info');
 
-                // 🔥 تصفير حقول البوت الثاني المخصصة بعد كل مجموعة
+                // 🔥 تصفير حقول البوت الثاني المخصصة بعد كل مجموعة وترحيل الفاشل لـ error_message
                 const resetPayload = {
                     success_count: successCount,
                     failed_count: failedCount,
@@ -908,7 +941,7 @@ async function processOnePost(post) {
                     .update(resetPayload)
                     .eq('id', post.id);
             
-                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات.`, 'info');
+                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات والأخطاء.`, 'info');
             }
 
             const { data: checkData } = await supabase.from('publish_queue').select('groups_json').eq('id', post.id).single();
@@ -942,9 +975,9 @@ async function processOnePost(post) {
         await updatePostStatus(post.id, 'COMPLETED', { published_at: new Date(), error_message: null });
         await logToDashboard(`✅ [${ACCOUNT_NAME}] تم نشر الإعلان في المجموعات بنجاح.`, 'success');
     } else if (finalGroups.length === 0) {
-        // 🟢 التعديل: تحديث عمود البوت الثاني ليكون FAILED
+        // 🟢 التعديل: تحديث عمود البوت الثاني ليكون FAILED وترحيل الأخطاء لـ error_message
         await updatePostStatus(post.id, 'FAILED', { error_message: JSON.stringify(failedGroups) });
-        await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات. تم تغيير الحالة إلى (FAILED).`, 'error');
+        await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات مخزنة في الأخطاء. تم تغيير الحالة إلى (FAILED).`, 'error');
     }
 }
 
@@ -960,6 +993,19 @@ async function start() {
     let idleLogTimer = 0; 
 
     while (true) {
+        // 🛑 فحص الحد اليومي (15 مجموعة) أولاً
+        const limitReached = await checkDailyLimit();
+        if (limitReached) {
+            idleLogTimer++;
+            if (idleLogTimer >= 10) {
+                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت وصل للحد الأقصى اليومي (15 مجموعة). بانتظار تصفير العداد لليوم التالي...`, 'info');
+                idleLogTimer = 0;
+            }
+            await updateBotLastActive('IDLE');
+            await sleep(30000); 
+            continue;
+        }
+
         // 🛑 🟢 فحص مستمر لحالة (IDLE أو PAUSE) في وضع الانتظار
         let currentStatus = await getBotStatus();
         
