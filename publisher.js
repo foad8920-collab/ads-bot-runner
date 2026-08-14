@@ -29,7 +29,7 @@ const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 const BOT_DB_NAME = `bot${ACCOUNT_NUM}`; // 🟢 استخراج اسم البوت (bot2) لمطابقة جداول اللوحة
 
 // -------------------------------------------------------------------------
-// 🔗 دوال الربط بلوحة التحكم المركزية 🟢 (حُقنت هنا دون مساس بالكود الأصلي)
+// 🔗 دوال الربط بلوحة التحكم المركزية 🟢 
 // -------------------------------------------------------------------------
 
 async function getBotStatus() {
@@ -899,10 +899,8 @@ async function processOnePost(post) {
                 await Promise.race([publishTask, timeoutTask]);
                 successCount++;
                 
-                // 📊 جلب النص النهائي الفعلي الذي تم نشره لتسجيله في السجل الحي
+                // 📊 🟢 حقن لوحة التحكم: إرسال سجل النشر المباشر (نجاح) وزيادة العدادات
                 let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
-
-                // 📊 🟢 حقن لوحة التحكم: إرسال سجل النشر المباشر (نجاح) مع النص المعدل وزيادة العدادات
                 await logPublishEvent(freshPost, targetGroup.name, 'SUCCESS', finalAiText);
                 await incrementBotCounters();
 
@@ -917,7 +915,7 @@ async function processOnePost(post) {
                 failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
-                // 📊 🔴 حقن لوحة التحكم: إرسال السجل المباشر (فشل) مع السبب والنص المعدل
+                // 📊 🔴 حقن لوحة التحكم: إرسال السجل المباشر (فشل)
                 let finalAiText = freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
                 await logPublishEvent(freshPost, targetGroup.name, 'FAILED', finalAiText);
 
@@ -925,7 +923,7 @@ async function processOnePost(post) {
                 await page.close();
                 await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم تدمير صفحة المجموعة.`, 'info');
 
-                // 🔥 تصفير حقول البوت الثاني المخصصة بعد كل مجموعة وترحيل الفاشل لـ error_message
+                // 🔥 تصفير حقول البوت الثاني المخصصة بعد كل مجموعة
                 const resetPayload = {
                     success_count: successCount,
                     failed_count: failedCount,
@@ -941,7 +939,7 @@ async function processOnePost(post) {
                     .update(resetPayload)
                     .eq('id', post.id);
             
-                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات والأخطاء.`, 'info');
+                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات.`, 'info');
             }
 
             const { data: checkData } = await supabase.from('publish_queue').select('groups_json').eq('id', post.id).single();
@@ -951,7 +949,6 @@ async function processOnePost(post) {
             if (checkRemaining.length === 0) break;
 
             // ⚠️ التغيير الأهم: الانتظار بين كل مجموعة ومجموعة لحماية الحساب
-            // تم رفعه ليكون بين 7 إلى 12 دقيقة (بدلاً من 3-5 دقائق)
             const delay = randomDelay(420, 720);
             await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة أمان: انتظار ${Math.round(delay / 1000 / 60)} دقيقة قبل المجموعة التالية...`, 'info');
             await sleep(delay);
@@ -971,13 +968,11 @@ async function processOnePost(post) {
     try { finalGroups = JSON.parse(finalPost.groups_json || '[]'); } catch(e){}
 
     if (finalGroups.length === 0 && failedCount === 0) {
-        // 🟢 التعديل: تحديث عمود البوت الثاني ليكون COMPLETED عند الانتهاء كلياً بنجاح
         await updatePostStatus(post.id, 'COMPLETED', { published_at: new Date(), error_message: null });
         await logToDashboard(`✅ [${ACCOUNT_NAME}] تم نشر الإعلان في المجموعات بنجاح.`, 'success');
     } else if (finalGroups.length === 0) {
-        // 🟢 التعديل: تحديث عمود البوت الثاني ليكون FAILED وترحيل الأخطاء لـ error_message
         await updatePostStatus(post.id, 'FAILED', { error_message: JSON.stringify(failedGroups) });
-        await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات مخزنة في الأخطاء. تم تغيير الحالة إلى (FAILED).`, 'error');
+        await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات. تم تغيير الحالة إلى (FAILED).`, 'error');
     }
 }
 
@@ -993,24 +988,11 @@ async function start() {
     let idleLogTimer = 0; 
 
     while (true) {
-        // 🛑 فحص الحد اليومي (15 مجموعة) أولاً
-        const limitReached = await checkDailyLimit();
-        if (limitReached) {
-            idleLogTimer++;
-            if (idleLogTimer >= 10) {
-                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت وصل للحد الأقصى اليومي (15 مجموعة). بانتظار تصفير العداد لليوم التالي...`, 'info');
-                idleLogTimer = 0;
-            }
-            await updateBotLastActive('IDLE');
-            await sleep(30000); 
-            continue;
-        }
-
         // 🛑 🟢 فحص مستمر لحالة (IDLE أو PAUSE) في وضع الانتظار
         let currentStatus = await getBotStatus();
         
         if (currentStatus === 'IDLE') {
-            await updateBotLastActive(); // نبضة حية ليعرف السيرفر أن البوت متصل
+            await updateBotLastActive(); 
             idleLogTimer++;
             if (idleLogTimer >= 10) {
                 await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت في حالة (IDLE). ننتظر أمر تشغيل من لوحة التحكم...`, 'info');
@@ -1034,8 +1016,7 @@ async function start() {
                 await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
                 idleLogTimer = 0;
             }
-            // 🟢 إبلاغ اللوحة أن البوت جاهز وينتظر
-            await updateBotLastActive('PENDING');
+            await updateBotLastActive(); 
             await sleep(30000); 
             continue;
         }
@@ -1043,12 +1024,7 @@ async function start() {
 
         await processOnePost(post);
 
-        // 🟢 إبلاغ اللوحة بالعودة للانتظار بعد انتهاء الإعلان
-        await updateBotLastActive('PENDING');
-
-        // الانتظار بين إعلان كامل (بمجموعاته) وإعلان جديد
-        // تم رفعه ليكون بين 20 إلى 40 دقيقة
-        const delay = randomDelay(1200, 2400);
+        const delay = randomDelay(1200, 2400); 
         await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة الإعلانات الكبرى: انتظار ${Math.round(delay / 1000 / 60)} دقيقة...`, 'info');
         await sleep(delay);
     }
