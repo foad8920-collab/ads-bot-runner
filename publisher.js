@@ -291,12 +291,11 @@ async function cleanOldLogs() {
     }
 }
 
-// 🔥 الجلب الذكي للبوت الثاني: يجلب الإعلان الجاهز سواء كان pending أو processing ولديه مجموعات
+// 🔥 الجلب الذكي للبوت الثاني: يعتمد على عمود المجموعات الرئيسي (groups_json) فقط
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
         .select('*')
-        .or('status.eq.pending,status.eq.processing')
         .order('created_at', { ascending: true });
 
     if (error) {
@@ -308,15 +307,16 @@ async function getNextPendingPost() {
         for (const post of data) {
             let groups = [];
             try { groups = JSON.parse(post.groups_json || '[]'); } catch(e) {}
-            if (groups.length > 0) {
-                return post; // العثور على إعلان يحتوي على مجموعات متبقية للنشر
+            // الاعتماد فقط على وجود مجموعات متبقية، وأن البوت لم يكمل هذا الإعلان بعد
+            if (groups.length > 0 && post.bot2_status !== 'COMPLETED') {
+                return post; 
             }
         }
     }
     return null;
 }
 
-// 🟢 التعديل الدقيق لحماية العمود الرئيسي: التحديث هنا يطال bot2_status الخاص بالبوت الثاني فقط كما أردت
+// 🟢 التعديل الدقيق لحماية العمود الرئيسي: التحديث هنا يطال bot2_status الخاص البوت الثاني فقط
 async function updatePostStatus(id, status, extra = {}) {
     const { error } = await supabase
         .from('publish_queue')
@@ -1032,7 +1032,7 @@ async function start() {
                 await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
                 idleLogTimer = 0;
             }
-            // 🟢 إبلاغ اللوحة أننا خاملون لعدم وجود شغل
+            // 🟢 التعديل: تحويل حالة البوت تلقائياً إلى IDLE ليتوقف نهائياً عند خلو الطابور
             await updateBotLastActive('IDLE');
             await sleep(30000); 
             continue;
@@ -1040,9 +1040,6 @@ async function start() {
         idleLogTimer = 0; 
 
         await processOnePost(post);
-
-        // 🟢 إبلاغ اللوحة بالعودة للانتظار بعد انتهاء الإعلان
-        await updateBotLastActive('RUNNING');
 
         // الانتظار بين إعلان كامل (بمجموعاته) وإعلان جديد
         const delay = randomDelay(1200, 2400); // 20 إلى 40 دقيقة
