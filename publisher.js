@@ -537,9 +537,16 @@ async function publishToGroup(page, group, post, imagePath) {
     await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر الثقيلة...`, 'info');
     await smartSleep(loadWait); 
 
-    // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint
-    if (page.url().includes('login') || page.url().includes('checkpoint')) {
-        throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint لـ ${ACCOUNT_NAME}`);
+    // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint الحقيقي
+    const isLockedOut = await page.evaluate(() => {
+        const bodyText = document.body.innerText || '';
+        return document.querySelector('input[type="password"]') !== null || 
+               bodyText.includes('تم قفل حسابك') || 
+               bodyText.includes('Your account has been locked');
+    });
+
+    if (isLockedOut) {
+        throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint حقيقي لـ ${ACCOUNT_NAME}`);
     }
 
     // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
@@ -778,19 +785,9 @@ async function processOnePost(post) {
     });
 
     const context = await browser.newContext({
-        viewport: { width: 393, height: 851 },
-        isMobile: true,
-        hasTouch: true,
-        userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+        viewport: { width: 1280, height: 800 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write']
-    });
-
-    await context.route('**/*', (route) => {
-        const resourceType = route.request().resourceType();
-        if (['font', 'media'].includes(resourceType)) {
-            return route.abort();
-        }
-        return route.continue();
     });
 
     if (fs.existsSync(COOKIE_FILE)) {
@@ -918,9 +915,9 @@ async function processOnePost(post) {
                     break;
                 }
 
-                const isCheckpoint = err.message.includes('Checkpoint') || err.message.includes('تسجيل الدخول') || err.message.includes('login');
+                const isCheckpoint = err.message.includes('Checkpoint حقيقي');
                 if (isCheckpoint) {
-                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
+                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت حقيقي! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
                     await updateBotLastActive('IDLE');
                     await page.close();
                     break;
