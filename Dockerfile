@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# تثبيت كافة متصفحات Playwright مع التبعات بما فيها chrome-headless-shell
+# تثبيت كافة متصفحات Playwright مع التبعات
 RUN npx playwright install --with-deps
 
 COPY . .
