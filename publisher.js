@@ -12,7 +12,7 @@ const { createClient } = require('@supabase/supabase-js');
 const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '2').trim();
 const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) 
     ? `./cookies${ACCOUNT_NUM}.json` 
-    : (fs.existsSync('./cookies2.json') ? './cookies2.json' : './cookies.json');
+    : (fs.existsSync('./cookies1.json') ? './cookies1.json' : './cookies.json');
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 const BOT_DB_NAME = `bot${ACCOUNT_NUM}`;
 const BOT_GROUP_FIELD = `bot${ACCOUNT_NUM}_group`;
