@@ -591,8 +591,14 @@ async function publishToGroup(page, group, post, imagePath) {
     startStageWatchdog();
 
     try {
-        // ⏳ المرحلة 1: فتح المجموعة بوضع الجوال مع فرض تبويب المناقشة
-        let targetUrl = group.url || '';
+        // ⏳ المرحلة 1: فتح المجموعة بوضع الجوال مع التحقق الصارم من الرابط
+        let targetUrl = (group.url || group.link || '').trim();
+        if (!targetUrl) {
+            throw new Error(`رابط المجموعة فارغ أو غير مسجل في قاعدة البيانات: "${group.name}"`);
+        }
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+            targetUrl = 'https://' + targetUrl;
+        }
         targetUrl = targetUrl.replace('www.facebook.com', 'm.facebook.com');
         if (!targetUrl.includes('m.facebook.com') && !targetUrl.includes('mbasic.facebook.com')) {
             targetUrl = targetUrl.replace('facebook.com', 'm.facebook.com');
