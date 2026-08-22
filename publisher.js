@@ -592,13 +592,30 @@ async function publishToGroup(page, group, post, imagePath) {
 
     try {
         // ⏳ المرحلة 1: فتح المجموعة بوضع الجوال مع التحقق الصارم من الرابط
-        let targetUrl = (group.url || group.link || '').trim();
-        if (!targetUrl) {
-            throw new Error(`رابط المجموعة فارغ أو غير مسجل في قاعدة البيانات: "${group.name}"`);
+        let targetUrl = (group.url || group.link || group.href || '').trim();
+
+        if (!targetUrl || targetUrl === 'undefined' || targetUrl === 'null') {
+            // 🔎 البحث عن المجموعة باسمها في فيسبوك إذا لم يتوفر رابط مباشر
+            setStage(1, `البحث عن المجموعة باسمها (${group.name})`);
+            const searchUrl = `https://m.facebook.com/search/groups/?q=${encodeURIComponent(group.name)}`;
+            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+            await smartSleep(randomDelay(4, 8));
+
+            try {
+                const groupLink = await page.$('a[href*="/groups/"]');
+                if (groupLink) {
+                    const href = await groupLink.getAttribute('href');
+                    if (href) {
+                        targetUrl = href.startsWith('http') ? href : `https://m.facebook.com${href}`;
+                    }
+                }
+            } catch(e) {}
         }
-        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-            targetUrl = 'https://' + targetUrl;
+
+        if (!targetUrl || !targetUrl.includes('facebook.com')) {
+            throw new Error(`تعذر العثور على رابط صالح لمجموعة: "${group.name}"`);
         }
+
         targetUrl = targetUrl.replace('www.facebook.com', 'm.facebook.com');
         if (!targetUrl.includes('m.facebook.com') && !targetUrl.includes('mbasic.facebook.com')) {
             targetUrl = targetUrl.replace('facebook.com', 'm.facebook.com');
