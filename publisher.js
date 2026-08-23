@@ -171,56 +171,32 @@ async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
     if (!apiKey) {
-        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
         return `${title}\n\n${description}`;
     }
 
-    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب، جديد، ومختلف تماماً مع الحفاظ على نفس الفكرة والمعلومات الأساسية والروابط إن وجدت. اجعل العبارات طبيعية وغير مكررة.
-العنوان الاصلي: ${title}
-الوصف الاصلي: ${description}
+    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب ومختلف مع الحفاظ على كل التفاصيل وأرقام الهواتف والروابط:
+العنوان: ${title}
+الوصف: ${description}`;
 
-أعطني النتيجة مباشرة بالتنسيق التالي:
-العنوان: [العنوان الجديد]
-الوصف: [الوصف الجديد]`;
+    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro'];
+    for (const modelName of candidateModels) {
+        try {
+            const response = await axios({
+                method: 'post',
+                url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+                headers: { 'Content-Type': 'application/json' },
+                data: { contents: [{ parts: [{ text: promptText }] }] },
+                timeout: 10000
+            });
 
-    try {
-        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 15000 });
-        const validModels = (modelsResponse.data.models || []).filter(m => 
-            m.supportedGenerationMethods && 
-            m.supportedGenerationMethods.includes('generateContent') &&
-            m.name.includes('gemini')
-        );
-
-        if (validModels.length === 0) {
-            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص حالياً.`, 'info');
-            return `${title}\n\n${description}`;
-        }
-
-        for (const modelObj of validModels) {
-            const exactModelName = modelObj.name;
-            try {
-                await logToDashboard(`🧠 [AI] جاري محاولة الاتصال بالنموذج: ${exactModelName}...`, 'info');
-
-                const response = await axios({
-                    method: 'post',
-                    url: `https://generativelanguage.googleapis.com/v1beta/${exactModelName}:generateContent?key=${apiKey}`,
-                    headers: { 'Content-Type': 'application/json' },
-                    data: { contents: [{ parts: [{ text: promptText }] }] },
-                    timeout: 45000
-                });
-
-                const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (aiText) {
-                    await logToDashboard(`✨ [AI] تم إعادة صياغة الإعلان بنجاح بواسطة (${exactModelName})!`, 'success');
-                    return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
-                }
-            } catch (e) {
-                continue;
+            const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (aiText && aiText.trim().length > 10) {
+                await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${modelName})!`, 'success');
+                return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
             }
-        }
-    } catch (e) {}
+        } catch (e) {}
+    }
 
-    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة بالذكاء الاصطناعي، سيتم استخدام النص الأصلي.`, 'info');
     return `${title}\n\n${description}`;
 }
 
@@ -540,9 +516,9 @@ async function openPostBox(page) {
 }
 
 async function pasteTextWithLines(page, postText) {
-    // ⏳ المرحلة 7: التركيز على الحقل ولصق النص بمحاكاة بشرية كاملة
+    // ⏳ المرحلة 7: التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية
     setStage(7, 'التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية');
-    await smartSleep(randomDelay(6, 12));
+    await smartSleep(randomDelay(4, 8));
 
     const targetSelectors = [
         'textarea[name="xc_message"]',
@@ -555,9 +531,6 @@ async function pasteTextWithLines(page, postText) {
         'div[role="dialog"] [aria-label*="بم تفكر"]',
         'div[role="dialog"] [aria-label*="What\'s on your mind"]',
         'div[aria-label*="اكتب شيئاً"]',
-        'div[aria-label*="Write something"]',
-        'div[contenteditable="true"]',
-        'div[role="textbox"]'
     ];
 
     let textbox = null;
@@ -573,8 +546,8 @@ async function pasteTextWithLines(page, postText) {
 
     if (textbox) {
         try {
-            await textbox.click({ timeout: 8000, force: true });
-            await smartSleep(randomDelay(2, 4));
+            await textbox.click({ timeout: 6000, force: true });
+            await smartSleep(1500);
 
             const tagName = await textbox.evaluate(el => el.tagName.toLowerCase());
             if (tagName === 'textarea' || tagName === 'input') {
@@ -583,7 +556,6 @@ async function pasteTextWithLines(page, postText) {
                 return;
             }
 
-            // إدخال النص بطريقة سريعة تحافظ على الأسطر ولا تعلق في بيئة Docker/Linux السحابية
             await page.keyboard.insertText(postText);
             await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص مع الحفاظ على الأسطر بنجاح`, 'success');
             return;
@@ -620,7 +592,6 @@ async function publishToGroup(page, group, post, imagePath) {
         let targetUrl = (group.url || group.link || group.href || '').trim();
 
         if (!targetUrl || targetUrl === 'undefined' || targetUrl === 'null') {
-            // 🔎 البحث عن المجموعة باسمها في فيسبوك إذا لم يتوفر رابط مباشر
             setStage(1, `البحث عن المجموعة باسمها (${group.name})`);
             const searchUrl = `https://m.facebook.com/search/groups/?q=${encodeURIComponent(group.name)}`;
             await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -651,7 +622,7 @@ async function publishToGroup(page, group, post, imagePath) {
         setStage(1, `فتح صفحة المجموعة بوضع الجوال (${group.name}) واستقرار العناصر`);
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
         
-        const loadWait = randomDelay(25, 40);
+        const loadWait = randomDelay(23, 35);
         await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر...`, 'info');
         await smartSleep(loadWait); 
 
@@ -663,146 +634,9 @@ async function publishToGroup(page, group, post, imagePath) {
         const opened = await openPostBox(page);
         if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
 
-        await smartSleep(randomDelay(8, 15)); 
+        await smartSleep(randomDelay(7, 13)); 
 
-        // ⏳ المرحلة 6: رفع الميديا والانتظار لاستقرار المعاينة
-        if (imagePath) {
-            const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi');
-            setStage(6, `رفع الملف المرفق (${isVideoFile ? 'فيديو' : 'صورة'}) ومعاينة الرفع`);
-            
-            let isFileInjected = false;
-
-            // محاولة 1: الحقن المباشر في عنصر الـ input لتفادي تعليق نافذة النظام (OS FileChooser)
-            try {
-                const allFileInputs = page.locator('input[type="file"]');
-                const count = await allFileInputs.count();
-                if (count > 0) {
-                    await allFileInputs.first().setInputFiles(imagePath, { timeout: 20000 });
-                    isFileInjected = true;
-                    await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم حقن مسار الملف مباشرة في الـ input بنجاح.`, 'success');
-                }
-            } catch (e) {}
-
-            // محاولة 2: إذا لم يظهر الـ input إلا بعد نقر زر إضافة صورة/فيديو
-            if (!isFileInjected) {
-                const imageTriggerSelectors = [
-                    'div[aria-label="صورة/فيديو"]',
-                    'div[aria-label="Photo/video"]',
-                    'div[aria-label="صورة"]',
-                    'div[aria-label="Photo"]',
-                    'div[aria-label="Photos"]',
-                    'div[aria-label="الصور"]',
-                    'svg[aria-label="صورة/فيديو"]',
-                    'svg[aria-label="Photo/video"]',
-                    'svg[aria-label="صورة"]',
-                    'svg[aria-label="Photo"]',
-                    'div:has-text("صورة/فيديو")',
-                    'div:has-text("Photo/video")',
-                    'div:has-text("صورة")',
-                    'div:has-text("الصور")',
-                    'div:has-text("Photo")',
-                    'div:has-text("Photos")',
-                    'span:has-text("Photo")',
-                    'span:has-text("Photos")',
-                    'span:has-text("صورة")',
-                    'div[aria-label="صورة/مقطع فيديو"]',
-                    'div:has-text("صورة/مقطع فيديو")',
-                    'div[role="button"]:has(input[type="file"])',
-                    '[data-sigil*="photo"]',
-                    '[data-sigil*="camera"]',
-                    '[data-sigil*="media"]'
-                ];
-
-                for (const trigSel of imageTriggerSelectors) {
-                    try {
-                        const trigElement = page.locator(trigSel).first();
-                        if (await trigElement.count() > 0 && await trigElement.isVisible()) {
-                            const [fileChooser] = await Promise.all([
-                                page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null),
-                                trigElement.click({ timeout: 6000, force: true }).catch(() => {})
-                            ]);
-
-                            if (fileChooser) {
-                                await fileChooser.setFiles(imagePath);
-                                isFileInjected = true;
-                                await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم رفع الملف عبر معالج FileChooser بنجاح.`, 'success');
-                                break;
-                            }
-
-                            await smartSleep(3000);
-                            const fileInputAfter = page.locator('input[type="file"]').first();
-                            if (await fileInputAfter.count() > 0) {
-                                await fileInputAfter.setInputFiles(imagePath, { timeout: 15000 });
-                                isFileInjected = true;
-                                break;
-                            }
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            if (isFileInjected) {
-                // فحص ونقر أزرار المتابعة والتأكيد (Next / Done / التالي / تم) بعد اختيار الصورة
-                const mediaConfirmBtns = [
-                    'button:has-text("التالي")', 'button:has-text("Next")',
-                    'button:has-text("تم")', 'button:has-text("Done")',
-                    'div[role="button"]:has-text("التالي")', 'div[role="button"]:has-text("Next")',
-                    'div[role="button"]:has-text("تم")', 'div[role="button"]:has-text("Done")',
-                    'button:has-text("حفظ")', 'button:has-text("Save")',
-                    'div[role="button"]:has-text("حفظ")', 'div[role="button"]:has-text("Save")'
-                ];
-                for (const mBtn of mediaConfirmBtns) {
-                    try {
-                        const btn = page.locator(mBtn).first();
-                        if (await btn.count() > 0 && await btn.isVisible()) {
-                            await btn.click({ timeout: 4000, force: true });
-                            await smartSleep(2000);
-                        }
-                    } catch(e){}
-                }
-
-                const waitTime = isVideoFile ? 35000 : 15000;
-                
-                await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لمعالجة الملف ومعاينته...`, 'success');
-                await smartSleep(waitTime);
-                
-                // فحص تقدم معالجة ورفع الفيديو داخل واجهة فيسبوك
-                try {
-                    if (isVideoFile) {
-                        let uploadCheckRetries = 0;
-                        while (uploadCheckRetries < 24) {
-                            const isStillUploading = await page.evaluate(() => {
-                                const progress = document.querySelector('[role="progressbar"], .progress_bar, div[aria-valuenow]');
-                                const bodyText = document.body.innerText || '';
-                                return !!progress || bodyText.includes('جاري التحميل') || bodyText.includes('Uploading') || bodyText.includes('جاري معالجة الفيديو') || bodyText.includes('Processing video') || bodyText.includes('قيد المعالجة');
-                            });
-
-                            if (!isStillUploading) {
-                                await logToDashboard(`✅ [المرحلة 6] [${ACCOUNT_NAME}] اكتملت معالجة ورفع الفيديو في فيسبوك بنجاح!`, 'success');
-                                break;
-                            }
-                            await logToDashboard(`⏳ [المرحلة 6] [${ACCOUNT_NAME}] فيسبوك لا يزال يرفع/يعالج الفيديو... (فحص ${uploadCheckRetries + 1}/24)`, 'info');
-                            await smartSleep(5000);
-                            uploadCheckRetries++;
-                        }
-                    }
-
-                    await page.waitForSelector('img[src*="blob:"], video, [aria-label*="إزالة"], [aria-label*="Remove"], [aria-label*="حذف"]', { timeout: 25000 });
-                    await logToDashboard(`✅ [المرحلة 6] [${ACCOUNT_NAME}] ظهرت معاينة المرفق بنجاح في المنشور`, 'success');
-                } catch (e) {
-                    await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] استمرار العملية بعد انتظار المعاينة...`, 'info');
-                }
-                
-                const extraWait = randomDelay(8, 15);
-                await smartSleep(extraWait); 
-            } else {
-                await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] تعذر العثور على حقل رفع الملفات، سيتم النشر كنص فقط.`, 'info');
-            }
-        }
-        
-        await smartSleep(randomDelay(8, 15)); 
-
-        // ⏳ المرحلة 5: تجهيز أو صياغة محتوى الذكاء الاصطناعي
+        // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي
         setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
         let postText = post[BOT_AI_FIELD] || post.ai_final_text || '';
         
@@ -826,6 +660,86 @@ async function publishToGroup(page, group, post, imagePath) {
         }
 
         await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
+
+        // ⏳ المرحلة 6: رفع الميديا ومعاينة الملف
+        if (imagePath) {
+            const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi');
+            setStage(6, `رفع الملف المرفق (${isVideoFile ? 'فيديو' : 'صورة'}) ومعاينة الرفع`);
+            
+            let isFileInjected = false;
+
+            // محاولة 1: الحقن المباشر في عنصر الـ input
+            try {
+                const allFileInputs = page.locator('input[type="file"]');
+                const count = await allFileInputs.count();
+                if (count > 0) {
+                    await allFileInputs.first().setInputFiles(imagePath, { timeout: 12000 });
+                    isFileInjected = true;
+                    await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم حقن مسار الملف مباشرة في الـ input بنجاح.`, 'success');
+                }
+            } catch (e) {}
+
+            // محاولة 2: إذا لم يظهر الـ input إلا بعد نقر زر إضافة صورة/فيديو
+            if (!isFileInjected) {
+                const imageTriggerSelectors = [
+                    'div[aria-label="صورة/فيديو"]',
+                    'div[aria-label="Photo/video"]',
+                    'div[aria-label="صورة"]',
+                    'div[aria-label="Photo"]',
+                    'div[aria-label="Photos"]',
+                    'div[aria-label="الصور"]',
+                    'svg[aria-label="صورة/فيديو"]',
+                    'svg[aria-label="Photo/video"]',
+                    'div:has-text("صورة/فيديو")',
+                    'div:has-text("Photo/video")',
+                    'div:has-text("صورة")',
+                    'div:has-text("الصور")',
+                    'div:has-text("Photo")',
+                    'div:has-text("Photos")',
+                    'span:has-text("Photo")',
+                    'span:has-text("Photos")',
+                    'span:has-text("صورة")',
+                    'div[role="button"]:has(input[type="file"])',
+                    '[data-sigil*="photo"]',
+                    '[data-sigil*="camera"]'
+                ];
+
+                for (const trigSel of imageTriggerSelectors) {
+                    try {
+                        const trigElement = page.locator(trigSel).first();
+                        if (await trigElement.count() > 0 && await trigElement.isVisible()) {
+                            const [fileChooser] = await Promise.all([
+                                page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null),
+                                trigElement.click({ timeout: 4000, force: true }).catch(() => {})
+                            ]);
+
+                            if (fileChooser) {
+                                await fileChooser.setFiles(imagePath);
+                                isFileInjected = true;
+                                await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم رفع الملف عبر معالج FileChooser بنجاح.`, 'success');
+                                break;
+                            }
+
+                            await smartSleep(1500);
+                            const fileInputAfter = page.locator('input[type="file"]').first();
+                            if (await fileInputAfter.count() > 0) {
+                                await fileInputAfter.setInputFiles(imagePath, { timeout: 8000 });
+                                isFileInjected = true;
+                                break;
+                            }
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            if (isFileInjected) {
+                const waitTime = isVideoFile ? 20000 : 5000;
+                await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم إرفاق الملف، ننتظر ${waitTime/1000} ثوانٍ لمعاينة الصورة...`, 'success');
+                await smartSleep(waitTime);
+            } else {
+                await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] تعذر العثور على حقل رفع الملفات، سيتم النشر كنص فقط.`, 'info');
+            }
+        }
 
         // ⏳ المرحلة 7: لصق النص ومحاكاة الكتابة البشرية
         await pasteTextWithLines(page, postText);
@@ -852,6 +766,23 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 9: فحص زر النشر والضغط عليه مع كامل المحددات والمترادفات والفحص العميق
         setStage(9, 'فحص زر النشر والضغط عليه');
+
+        // 🟢 خطوة حاسمة: تنشيط فوري لمحرر فيسبوك بالسبيس وإطلاق الـ Events لتفعيل زر النشر فوراً
+        await logToDashboard(`⌨️ [المرحلة 9] [${ACCOUNT_NAME}] تنشيط محرر فيسبوك بالسبيس لتفعيل زر النشر...`, 'info');
+        try {
+            await page.evaluate(() => {
+                const editor = document.querySelector('textarea, [contenteditable="true"], div[role="textbox"]');
+                if (editor) {
+                    editor.focus();
+                    editor.dispatchEvent(new Event('input', { bubbles: true }));
+                    editor.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            await page.keyboard.press('Space');
+            await smartSleep(400);
+            await page.keyboard.press('Backspace');
+            await smartSleep(1500);
+        } catch (e) {}
         
         const targetButtonSelectors = [
             // 1. محددات فيسبوك الجوال الرسمية (Mobile Web Composer Submit)
@@ -861,117 +792,75 @@ async function publishToGroup(page, group, post, imagePath) {
             'input[name="view_post"]',
             'div[data-sigil*="composer-submit"]',
             'button[data-sigil*="composer-submit"]',
+            'button[data-sigil*="submit"]',
+            'div[data-sigil*="submit"]',
             'button[value="نشر"]',
             'button[value="Post"]',
+            'button[value="POST"]',
             'button[value="مشاركة"]',
             'button[value="Share"]',
             'input[value="نشر"]',
             'input[value="Post"]',
+            'input[value="POST"]',
             
-            // 2. محددات الحوار والنافذة
+            // 2. محددات الحوار والنافذة والهيدر
             'div[role="dialog"] button[type="submit"]',
             'div[role="dialog"] div[role="button"][aria-label="نشر"]',
             'div[role="dialog"] div[role="button"][aria-label="Post"]',
+            'div[role="dialog"] div[role="button"][aria-label="POST"]',
             'div[role="dialog"] div[role="button"][aria-label="مشاركة"]',
             'div[role="dialog"] div[role="button"][aria-label="Share"]',
             'div[role="dialog"] div[role="button"]:has-text("نشر")',
             'div[role="dialog"] div[role="button"]:has-text("Post")',
+            'div[role="dialog"] div[role="button"]:has-text("POST")',
             'div[role="dialog"] button:has-text("نشر")',
             'div[role="dialog"] button:has-text("Post")',
-            
-            // 3. أزرار الهيدر والـ Submit العامة
+            'div[role="dialog"] button:has-text("POST")',
             'header button:has-text("نشر")',
             'header button:has-text("Post")',
+            'header button:has-text("POST")',
             'header div[role="button"]:has-text("نشر")',
             'header div[role="button"]:has-text("Post")',
+            'header div[role="button"]:has-text("POST")',
             'div[data-mcomponent="ServerHeader"] div[role="button"]',
             'button[type="submit"]:has-text("نشر")',
             'button[type="submit"]:has-text("Post")',
+            'button[type="submit"]:has-text("POST")',
             'button[type="submit"]:has-text("مشاركة")',
             'button[type="submit"]:has-text("Share")',
             'div[role="button"][aria-label="نشر"]',
             'div[role="button"][aria-label="Post"]',
+            'div[role="button"][aria-label="POST"]',
             'div[role="button"][aria-label="مشاركة"]',
             'div[role="button"][aria-label="Share"]',
             'div[aria-label="نشر"]',
             'div[aria-label="Post"]',
+            'div[aria-label="POST"]',
             'div[aria-label="مشاركة"]',
             'div[aria-label="Share"]',
             'div[role="button"]:has-text("نشر")',
             'div[role="button"]:has-text("Post")',
+            'div[role="button"]:has-text("POST")',
             'button:has-text("نشر")',
             'button:has-text("Post")',
+            'button:has-text("POST")',
             'text="نشر"',
-            'text="Post"'
+            'text="Post"',
+            'text="POST"'
         ];
 
         let published = false;
 
-        // المستوى 1: البحث في Playwright Locators
-        let targetEl = null;
-        let matchedSelector = '';
-
-        for (const sel of targetButtonSelectors) {
-            try {
-                const locator = page.locator(sel);
-                const count = await locator.count();
-                for (let i = 0; i < count; i++) {
-                    const el = locator.nth(i);
-                    if (await el.isVisible()) {
-                        targetEl = el;
-                        matchedSelector = sel;
-                        break;
-                    }
-                }
-                if (targetEl) break;
-            } catch (e) {}
-        }
-
-        if (targetEl) {
-            try {
-                let isDisabled = await targetEl.getAttribute('aria-disabled') || await targetEl.getAttribute('disabled');
-                let retries = 0;
-                const isVideoFile = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
-                const maxRetries = isVideoFile ? 15 : 6;
-
-                while ((isDisabled === 'true' || isDisabled === 'disabled') && retries < maxRetries) {
-                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر غير جاهز/رمادي بعد، جاري تنشيطه بالسبيس واستقرار المرفقات... (محاولة ${retries + 1}/${maxRetries})`, 'info');
-                    try {
-                        await page.evaluate(() => {
-                            const inp = document.querySelector('textarea, [contenteditable="true"], div[role="textbox"]');
-                            if (inp) {
-                                inp.focus();
-                                inp.dispatchEvent(new Event('input', { bubbles: true }));
-                                inp.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        });
-                        await page.keyboard.press('Space');
-                        await smartSleep(500);
-                        await page.keyboard.press('Backspace');
-                    } catch(e){}
-                    await smartSleep(3500);
-                    isDisabled = await targetEl.getAttribute('aria-disabled') || await targetEl.getAttribute('disabled');
-                    retries++;
-                }
-
-                await targetEl.click({ timeout: 8000, force: true, noWaitAfter: true });
-                published = true;
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر المحدد (${matchedSelector}) بنجاح!`, 'success');
-            } catch (e) {
-                await logToDashboard(`⚠️ [المرحلة 9] [${ACCOUNT_NAME}] تعذر النقر المباشر على الزر (${matchedSelector})، الانتقال للفحص العميق...`, 'info');
-            }
-        }
-
-        // المستوى 2: الفحص العميق الموجه لنموذج النشر في الـ DOM (Native JS Event Trigger)
-        if (!published) {
-            await logToDashboard(`🔍 [المرحلة 9] [${ACCOUNT_NAME}] جاري الفحص العميق في شجرة الـ DOM للعثور على زر النشر...`, 'info');
-            
+        // المستوى 1: الفحص الفوري المباشر بالـ DOM والنقر الفوري في أجزاء من الثانية
+        try {
             published = await page.evaluate(() => {
-                // 1. فحص زر الـ Submit الخاص بالكومبوزر حصراً
-                const composerForm = document.querySelector('form[action*="composer"], form[data-pagelet*="Composer"], form[data-sigil*="m-composer"]');
+                // أ) فحص أي زر داخل نموذج الكومبوزر
+                const composerForm = document.querySelector('form[action*="composer"], form[data-pagelet*="Composer"], form[data-sigil*="m-composer"], form[data-sigil*="composer"]');
                 if (composerForm) {
                     const submitBtn = composerForm.querySelector('button[type="submit"], input[type="submit"], button[name="view_post"], input[name="view_post"], [data-sigil*="composer-submit"]');
                     if (submitBtn) {
+                        submitBtn.removeAttribute('disabled');
+                        submitBtn.setAttribute('aria-disabled', 'false');
                         submitBtn.click();
                         submitBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                         return true;
@@ -982,27 +871,59 @@ async function publishToGroup(page, group, post, imagePath) {
                     }
                 }
 
-                // 2. فحص أزرار الـ Submit ذات الأسماء الصريحة للنشر
-                const directButtons = Array.from(document.querySelectorAll(
-                    '[data-sigil*="composer-submit"], button[name="view_post"], input[name="view_post"], button[value="نشر"], button[value="Post"]'
-                ));
-                for (const btn of directButtons) {
-                    const rect = btn.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        btn.click();
-                        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                        return true;
+                // ب) فحص أزرار الـ Submit والمحددات الصريحة
+                const targetSelectors = [
+                    '[data-sigil*="composer-submit"]',
+                    '[data-sigil*="submit"]',
+                    'button[name="view_post"]',
+                    'input[name="view_post"]',
+                    'button[value="نشر"]',
+                    'button[value="Post"]',
+                    'button[value="POST"]',
+                    'button[value="مشاركة"]',
+                    'button[value="Share"]',
+                    'input[value="نشر"]',
+                    'input[value="Post"]',
+                    'input[value="POST"]',
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    'div[role="dialog"] button',
+                    'header button',
+                    'header div[role="button"]',
+                    'div[data-mcomponent="ServerHeader"] div[role="button"]'
+                ];
+
+                for (const sel of targetSelectors) {
+                    const els = Array.from(document.querySelectorAll(sel));
+                    for (const el of els) {
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            el.removeAttribute('disabled');
+                            el.setAttribute('aria-disabled', 'false');
+                            el.click();
+                            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                            return true;
+                        }
                     }
                 }
 
-                // 3. فحص الأزرار التي تحتوي نص نشر أو post وتكون مرئية
-                const allButtons = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a[role="button"]'));
-                for (const btn of allButtons) {
+                // ج) فحص كل الأزرار بالـ Text والـ Aria-Label
+                const allBtns = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a[role="button"], input[type="button"], input[type="submit"]'));
+                for (const btn of allBtns) {
                     const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
                     const aria = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
-                    if (txt === 'نشر' || txt === 'post' || aria === 'نشر' || aria === 'post' || txt === 'مشاركة' || txt === 'share') {
+                    const val = (btn.getAttribute('value') || '').trim().toLowerCase();
+
+                    const isPostBtn = 
+                        txt === 'نشر' || txt === 'post' || txt === 'مشاركة' || txt === 'share' || txt === 'publish' ||
+                        aria === 'نشر' || aria === 'post' || aria === 'مشاركة' || aria === 'share' || aria.includes('نشر') || aria.includes('post') ||
+                        val === 'نشر' || val === 'post';
+
+                    if (isPostBtn) {
                         const rect = btn.getBoundingClientRect();
                         if (rect.width > 0 && rect.height > 0) {
+                            btn.removeAttribute('disabled');
+                            btn.setAttribute('aria-disabled', 'false');
                             btn.click();
                             btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                             return true;
@@ -1014,7 +935,22 @@ async function publishToGroup(page, group, post, imagePath) {
             });
 
             if (published) {
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر الفحص العميق (Native JS DOM Click) بنجاح!`, 'success');
+                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر بنجاح عبر (Direct DOM Trigger)!`, 'success');
+            }
+        } catch (e) {}
+
+        // المستوى 2: فحص عبر Playwright Locators السريعة في حال لم ينقر الـ DOM
+        if (!published) {
+            for (const sel of targetButtonSelectors) {
+                try {
+                    const locator = page.locator(sel).first();
+                    if (await locator.count() > 0 && await locator.isVisible()) {
+                        await locator.click({ timeout: 4000, force: true, noWaitAfter: true });
+                        published = true;
+                        await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر المحدد (${sel}) بنجاح!`, 'success');
+                        break;
+                    }
+                } catch (e) {}
             }
         }
 
