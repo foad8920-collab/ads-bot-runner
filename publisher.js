@@ -412,9 +412,12 @@ function stopStageWatchdog() {
 }
 
 async function openPostBox(page) {
+    const stage4StartTime = Date.now();
+    const MAX_STAGE4_DURATION = 12 * 60 * 1000; // مهلة أقصاها 12 دقيقة للبحث عن مربع النشر
+
     // ⏳ المرحلة 3: التبديل لتبويب مناقشة إذا وجد لتخطي واجهة البيع والشراء
     setStage(3, 'فحص التبويبات والتبديل إلى (مناقشة)');
-    await smartSleep(randomDelay(15, 25));
+    await smartSleep(randomDelay(10, 18));
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
@@ -427,12 +430,13 @@ async function openPostBox(page) {
     ];
 
     for (const tabSel of discussionTabs) {
+        if (Date.now() - stage4StartTime > MAX_STAGE4_DURATION) return false;
         try {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
-                await tabBtn.click({ timeout: 8000, force: true });
+                await tabBtn.click({ timeout: 4000, force: true });
                 await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)، ننتظر لاستقرار الواجهة...`, 'info');
-                await smartSleep(randomDelay(15, 25));
+                await smartSleep(randomDelay(10, 18));
                 break;
             }
         } catch (e) {}
@@ -451,11 +455,12 @@ async function openPostBox(page) {
             'text="Join group"'
         ];
         for (const jSel of joinBtns) {
+            if (Date.now() - stage4StartTime > MAX_STAGE4_DURATION) return false;
             const jBtn = page.locator(jSel).first();
             if (await jBtn.count() > 0 && await jBtn.isVisible()) {
-                await jBtn.click({ timeout: 5000, force: true });
+                await jBtn.click({ timeout: 4000, force: true });
                 await logToDashboard(`👥 [المرحلة 4] [${ACCOUNT_NAME}] تم طلب الانضمام للمجموعة أولاً...`, 'info');
-                await smartSleep(randomDelay(5, 10));
+                await smartSleep(randomDelay(4, 8));
                 break;
             }
         }
@@ -526,20 +531,25 @@ async function openPostBox(page) {
     ];
 
     for (const selector of selectors) {
+        if (Date.now() - stage4StartTime > MAX_STAGE4_DURATION) {
+            await logToDashboard(`⏱️ [المرحلة 4] [${ACCOUNT_NAME}] انتهت مهلة الـ 12 دقيقة المحددة للبحث عن مربع النشر دون جدوى.`, 'info');
+            return false;
+        }
+
         try {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
-                await element.click({ timeout: 10000, force: true });
+                await element.click({ timeout: 4000, force: true });
                 await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
-                await smartSleep(randomDelay(15, 25));
+                await smartSleep(randomDelay(10, 18));
 
                 const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree', 'text=قبول', 'text=Accept', 'text=إغلاق', 'text=Close', 'text=ليس الآن', 'text=Not Now'];
                 for (const cBtn of confirmBtns) {
                     try {
                         const btn = page.locator(cBtn).first();
                         if (await btn.count() > 0 && await btn.isVisible()) {
-                            await btn.click({ timeout: 5000, force: true });
-                            await smartSleep(randomDelay(3, 6));
+                            await btn.click({ timeout: 3000, force: true });
+                            await smartSleep(randomDelay(2, 4));
                         }
                     } catch(e){}
                 }
@@ -557,11 +567,12 @@ async function openPostBox(page) {
         'text=عرض عنصر للبيع', 'text=Sell something'
     ];
     for (const dSel of discussionBtns) {
+        if (Date.now() - stage4StartTime > MAX_STAGE4_DURATION) return false;
         try {
             const dBtn = page.locator(dSel).first();
             if (await dBtn.count() > 0 && await dBtn.isVisible()) {
-                await dBtn.click({ timeout: 10000, force: true });
-                await smartSleep(randomDelay(12, 20));
+                await dBtn.click({ timeout: 4000, force: true });
+                await smartSleep(randomDelay(8, 14));
                 return true;
             }
         } catch (e) {}
@@ -601,7 +612,7 @@ async function openPostBox(page) {
 
         if (openedByJS) {
             await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بواسطة JS Event Trigger`, 'success');
-            await smartSleep(randomDelay(15, 25));
+            await smartSleep(randomDelay(10, 18));
             return true;
         }
     } catch (e) {}
