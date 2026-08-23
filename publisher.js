@@ -127,7 +127,6 @@ app.get('/restart-bot', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🌐 Web Server active on port ${PORT} for ${ACCOUNT_NAME}`);
 
-    // تنبيه الاستيقاظ الذاتي كل 5 دقائق
     setInterval(async () => {
         try {
             const myServerUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`; 
@@ -522,14 +521,27 @@ async function pasteTextWithLines(page, postText) {
 }
 
 async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
-    // 🛡️ التحقق من وجود رابط صالح للمجموعة وتفادي الروابط الفارغة
-    let targetUrl = (group.url || group.link || '').trim();
-    if (!targetUrl || !targetUrl.includes('facebook.com')) {
-        throw new Error(`رابط المجموعة غير صالح أو فارغ: (${targetUrl})`);
+    // 🛡️ استخراج الرابط الصحيح والشامل للمجموعة ومنع الانهيار للروابط الفارغة
+    let targetUrl = (
+        group.url || 
+        group.link || 
+        group.group_url || 
+        group.fb_url || 
+        (group.id ? `https://www.facebook.com/groups/${group.id}` : '')
+    ).trim();
+
+    if (!targetUrl || (!targetUrl.includes('facebook.com') && !targetUrl.startsWith('/groups/'))) {
+        throw new Error(`رابط المجموعة غير صالح أو فارغ في قاعدة البيانات: (${targetUrl || 'فارغ'})`);
     }
 
     targetUrl = targetUrl.replace('m.facebook.com', 'www.facebook.com').replace('web.facebook.com', 'www.facebook.com');
-    if (!targetUrl.startsWith('http')) targetUrl = `https://${targetUrl}`;
+    if (!targetUrl.startsWith('http')) {
+        if (targetUrl.startsWith('/groups/')) {
+            targetUrl = `https://www.facebook.com${targetUrl}`;
+        } else {
+            targetUrl = `https://${targetUrl}`;
+        }
+    }
     
     const separator = targetUrl.includes('?') ? '&' : '?';
     targetUrl = `${targetUrl}${separator}sorting_setting=CHRONOLOGICAL`;
