@@ -474,14 +474,25 @@ async function openPostBox(page) {
         'div[data-sigil="m-feed-composer-opener"]',
         'div[data-sigil*="composer"]',
         'span:has-text("اكتب شيئًا...")',
+        'span:has-text("اكتب شيئاً...")',
+        'span:has-text("اكتب شيئا...")',
         'span:has-text("Write something...")',
+        'span:has-text("Write something")',
         'text="اكتب شيئًا..."',
+        'text="اكتب شيئاً..."',
+        'text="اكتب شيئا..."',
         'text="Write something..."',
+        'text="Write something"',
         'text="بم تفكر؟"',
+        'text="بم تفكر"',
         'text="What\'s on your mind?"',
+        'text="What\'s on your mind"',
         'text="إنشاء منشور عام..."',
+        'text="إنشاء منشور عام"',
         'text="Create a public post..."',
+        'text="Create a public post"',
         'text="ماذا تبيع؟"',
+        'text="ماذا تبيع"',
         'text="What are you selling?"',
         'text="عرض عنصر للبيع"',
         'text="Sell something"',
@@ -489,8 +500,11 @@ async function openPostBox(page) {
         'text="Item for sale"',
         'text="بيع شيء ما"',
         'div[role="button"]:has-text("اكتب شيئًا...")',
+        'div[role="button"]:has-text("اكتب شيئاً...")',
         'div[role="button"]:has-text("Write something...")',
+        'div[role="button"]:has-text("Write something")',
         'div[role="button"]:has-text("بم تفكر؟")',
+        'div[role="button"]:has-text("بم تفكر")',
         'div[role="button"]:has-text("What\'s on your mind?")',
         'div[role="button"]:has-text("إنشاء منشور عام...")',
         'div[role="button"]:has-text("Create a public post...")',
@@ -505,6 +519,7 @@ async function openPostBox(page) {
         'div[aria-label*="إنشاء منشور"]',
         'div[aria-label*="Write something"]',
         'div[aria-label*="اكتب شيئ"]',
+        'div[aria-label*="اكتب"]',
         'div[role="textbox"]',
         '[contenteditable="true"]',
         'span:has-text("اكتب شيئاً...")',
@@ -585,22 +600,15 @@ async function openPostBox(page) {
                 const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
                 const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
                 return (
-                    txt.includes('اكتب شيئ') || 
-                    txt.includes('write something') || 
+                    txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
-                    txt.includes("what's on your mind") || 
+                    txt.includes("What's on your mind") || 
                     txt.includes('إنشاء منشور') ||
-                    txt.includes('create a public post') ||
-                    txt.includes('ماذا تبيع') ||
-                    txt.includes('عنصر للبيع') ||
-                    txt.includes('sell something') ||
-                    txt.includes('بدء مناقشة') ||
-                    txt.includes('مناقشة') ||
+                    txt.includes('Create a public post') ||
                     aria.includes('اكتب') ||
-                    aria.includes('write') ||
-                    aria.includes('إنشاء منشور') ||
-                    aria.includes('create a post') ||
-                    aria.includes('create a public post')
+                    aria.includes('Write') ||
+                    aria.includes('Create a public post') ||
+                    aria.includes('إنشاء منشور')
                 );
             });
             if (target) {
@@ -612,7 +620,7 @@ async function openPostBox(page) {
 
         if (openedByJS) {
             await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بواسطة JS Event Trigger`, 'success');
-            await smartSleep(randomDelay(10, 18));
+            await smartSleep(randomDelay(15, 25));
             return true;
         }
     } catch (e) {}
@@ -628,6 +636,13 @@ async function pasteTextWithLines(page, postText) {
     const targetSelectors = [
         'textarea[name="xc_message"]',
         'textarea[data-sigil*="composer"]',
+        'textarea[data-sigil*="textbox"]',
+        'textarea[aria-label*="اكتب"]',
+        'textarea[aria-label*="Write"]',
+        'textarea[placeholder*="اكتب"]',
+        'textarea[placeholder*="Write"]',
+        'textarea[placeholder*="بم تفكر"]',
+        'textarea[placeholder*="What\'s on your mind"]',
         'textarea',
         'div[role="dialog"] div[role="textbox"]',
         'div[role="dialog"] [contenteditable="true"]',
@@ -635,7 +650,17 @@ async function pasteTextWithLines(page, postText) {
         'div[role="dialog"] [aria-label*="Write"]',
         'div[role="dialog"] [aria-label*="بم تفكر"]',
         'div[role="dialog"] [aria-label*="What\'s on your mind"]',
+        'div[role="textbox"]',
+        '[contenteditable="true"]',
+        'div[data-sigil*="composer-body"]',
         'div[aria-label*="اكتب شيئاً"]',
+        'div[aria-label*="اكتب شيئ"]',
+        'div[aria-label*="اكتب"]',
+        'div[aria-label*="Write"]',
+        'div[aria-label*="منشور"]',
+        'div[aria-label*="Post"]',
+        'div[aria-label*="بم تفكر"]',
+        'div[aria-label*="What\'s on your mind"]'
     ];
 
     let textbox = null;
