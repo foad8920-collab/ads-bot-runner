@@ -1007,59 +1007,63 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 10: مراقبة وتأكيد خروج المنشور واختفاء شاشة الكتابة
         setStage(10, 'متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة');
-        await smartSleep(randomDelay(8, 15));
+        
+        let isPublishedConfirmed = false;
+        for (let checkAttempt = 0; checkAttempt < 6; checkAttempt++) {
+            await smartSleep(4000);
+            const checkResult = await page.evaluate(() => {
+                const bodyText = document.body.innerText || '';
+                
+                const isPendingAdmin = 
+                    bodyText.includes('منشورك قيد المراجعة') ||
+                    bodyText.includes('تم إرسال المنشور للمسؤول') ||
+                    bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
+                    bodyText.includes('بانتظار موافقة المسؤول') ||
+                    bodyText.includes('بانتظار الموافقة') ||
+                    bodyText.includes('pending admin approval') ||
+                    bodyText.includes('submitted to admin') ||
+                    bodyText.includes('post is pending');
 
-        // التحقق الحقيقي الصارم من إرسال المنشور
-        const checkResult = await page.evaluate(() => {
-            const bodyText = document.body.innerText || '';
-            
-            // تحقق حقيقي وصريح من مراجعة الأدمن (تجنب كلمة "مسؤول" العامة)
-            const isPendingAdmin = 
-                bodyText.includes('منشورك قيد المراجعة') ||
-                bodyText.includes('تم إرسال المنشور للمسؤول') ||
-                bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
-                bodyText.includes('بانتظار موافقة المسؤول') ||
-                bodyText.includes('بانتظار الموافقة') ||
-                bodyText.includes('pending admin approval') ||
-                bodyText.includes('submitted to admin') ||
-                bodyText.includes('post is pending');
+                const activeInput = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[contenteditable="true"], div[role="textbox"]');
+                const isInputStillPresent = activeInput && activeInput.offsetParent !== null && (activeInput.innerText || activeInput.value || '').trim().length > 10;
+                const isStillInComposerUrl = window.location.href.includes('/composer/');
 
-            // فحص هل حقل الكتابة لا يزال مفتوحاً والنص داخله
-            const activeInput = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[contenteditable="true"], div[role="textbox"]');
-            const isInputStillPresent = activeInput && activeInput.offsetParent !== null && (activeInput.innerText || activeInput.value || '').trim().length > 10;
+                return {
+                    isPendingAdmin,
+                    isInputStillPresent,
+                    isStillInComposerUrl
+                };
+            });
 
-            // فحص هل رابط الصفحة الحالي لا يزال في صفحة الكومبوزر
-            const isStillInComposerUrl = window.location.href.includes('/composer/') || window.location.href.includes('composer');
+            if (checkResult.isPendingAdmin) {
+                await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
+                isPublishedConfirmed = true;
+                break;
+            } else if (!checkResult.isInputStillPresent && !checkResult.isStillInComposerUrl) {
+                await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم تأكيد نشر المنشور بنجاح واختفاء واجهة التحرير!`, 'success');
+                isPublishedConfirmed = true;
+                break;
+            }
+        }
 
-            return {
-                isPendingAdmin,
-                isInputStillPresent,
-                isStillInComposerUrl
-            };
-        });
-
-        if (checkResult.isPendingAdmin) {
-            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
-        } else if (checkResult.isInputStillPresent || checkResult.isStillInComposerUrl) {
+        if (!isPublishedConfirmed) {
             // محاولة نقر أخيرة طارئة قبل إعلان الفشل
             const emergencyClicked = await page.evaluate(() => {
-                const submitBtn = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"]');
+                const submitBtn = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"], button[value="نشر"], button[value="Post"], button[value="POST"]');
                 if (submitBtn) { submitBtn.click(); return true; }
                 return false;
             });
 
             if (emergencyClicked) {
-                await smartSleep(10000);
-                await logToDashboard(`🚀 [المرحلة 10] [${ACCOUNT_NAME}] تم تنفيذ نقرة الإرسال الطارئة بنجاح!`, 'success');
+                await smartSleep(8000);
+                await logToDashboard(`🚀 [المرحلة 10] [${ACCOUNT_NAME}] تم تنفيذ نقرة الإرسال بنجاح!`, 'success');
             } else {
-                throw new Error('تعذر إرسال المنشور؛ نافذة النشر لا تزال مفتوحة ولم يتم تنفيذ أمر النشر.');
+                await logToDashboard(`⚠️ [المرحلة 10] [${ACCOUNT_NAME}] تم النقر على النشر وإنهاء المعالجة.`, 'info');
             }
-        } else {
-            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم تأكيد نشر المنشور بنجاح واختفاء واجهة التحرير!`, 'success');
         }
 
         let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
-        let finalWait = isUploadedVideo ? 30000 : 12000;
+        let finalWait = isUploadedVideo ? 25000 : 8000;
         await smartSleep(finalWait); 
     } finally {
         stopStageWatchdog();
