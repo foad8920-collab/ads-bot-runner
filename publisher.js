@@ -1,16 +1,3 @@
-// 🌟 السحر هنا: حل مشكلة اختفاء المتصفح من السيرفر نهائياً (الحقن وقت التشغيل في Railway)
-process.env.PLAYWRIGHT_BROWSERS_PATH = '/tmp/pw-browsers';
-const { execSync } = require('child_process');
-try {
-    console.log("🚀 [النظام] جاري تجهيز المتصفح في مسار آمن لتجاوز أخطاء مسح Railway...");
-    execSync('npx playwright install chromium', { stdio: 'inherit' });
-    console.log("✅ [النظام] المتصفح جاهز ومحمي من الحذف 100%!");
-} catch (e) {
-    console.log("⚠️ [النظام] تنبيه أثناء تجهيز المتصفح:", e.message);
-}
-
-// -------------------------------------------------------------------------
-
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
@@ -21,11 +8,16 @@ const path = require('path');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🌟 تخصيص رقم الحساب والسيرفر الثاني (الافتراضي: 2)
-const ACCOUNT_NUM = process.env.ACCOUNT_NUMBER || '2';
-const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) ? `./cookies${ACCOUNT_NUM}.json` : './cookies2.json';
+// 🌟 تخصيص رقم الحساب والسيرفر للبوت 1 (الافتراضي: 1 لبوت 1 على Render، أو عبر متغير البيئة)
+const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '2').trim();
+const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) 
+    ? `./cookies${ACCOUNT_NUM}.json` 
+    : (fs.existsSync('./cookies2.json') ? './cookies2.json' : './cookies.json');
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 const BOT_DB_NAME = `bot${ACCOUNT_NUM}`;
+const BOT_GROUP_FIELD = `bot${ACCOUNT_NUM}_group`;
+const BOT_STATUS_FIELD = `bot${ACCOUNT_NUM}_status`;
+const BOT_AI_FIELD = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
 
 // -------------------------------------------------------------------------
 // 🔗 دوال الربط بلوحة التحكم المركزية 🟢 
@@ -39,20 +31,26 @@ const supabase = createClient(
 const TEMP_DIR = './temp';
 
 async function getBotStatus() {
-    const { data, error } = await supabase
-        .from('bot_counters')
-        .select('status')
-        .eq('bot_name', BOT_DB_NAME)
-        .single();
-    if (error || !data || !data.status) return 'IDLE'; 
-    return data.status.toUpperCase();
+    try {
+        const { data, error } = await supabase
+            .from('bot_counters')
+            .select('status')
+            .eq('bot_name', BOT_DB_NAME)
+            .single();
+        if (error || !data || !data.status) return 'IDLE'; 
+        return data.status.toUpperCase();
+    } catch (e) {
+        return 'RUNNING'; // في حال حدوث خطأ شبكة عابر لا نوقف البوت فوراً
+    }
 }
 
 async function updateBotLastActive(forceStatus = null) {
-    const updateData = { bot_name: BOT_DB_NAME, last_active: new Date() };
-    if (forceStatus) updateData.status = forceStatus;
-
-    await supabase.from('bot_counters').upsert(updateData, { onConflict: 'bot_name' });
+    try {
+        const updateData = { bot_name: BOT_DB_NAME, last_active: new Date() };
+        if (forceStatus) updateData.status = forceStatus;
+        
+        await supabase.from('bot_counters').upsert(updateData, { onConflict: 'bot_name' });
+    } catch(e) {}
 }
 
 // 🟢 حارس الحد اليومي (15 مجموعة كحد أقصى)
@@ -75,7 +73,7 @@ async function incrementBotCounters() {
         const { data, error } = await supabase.from('bot_counters').select('daily_count, total_count').eq('bot_name', BOT_DB_NAME).single();
         let daily = (data && data.daily_count) ? data.daily_count : 0;
         let total = (data && data.total_count) ? data.total_count : 0;
-
+        
         const newDaily = daily + 1;
         const newTotal = total + 1;
         const targetStatus = newDaily >= 15 ? 'IDLE' : 'RUNNING';
@@ -96,7 +94,7 @@ async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null
         await supabase.from('bot_publish_logs').insert([{
             bot_name: BOT_DB_NAME,
             ad_id: post.id ? post.id.toString() : 'Unknown',
-            ad_title: aiModifiedText || post.ai_final_text2 || post.ai_final_text || post.ad_title || 'بدون عنوان',
+            ad_title: aiModifiedText || post[BOT_AI_FIELD] || post.ai_final_text || post.ad_title || 'بدون عنوان',
             group_name: groupName,
             status: statusMsg,
             published_at: new Date()
@@ -112,10 +110,10 @@ function getMemoryLog() {
     return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
 }
 
-// 🌟 تشغيل سيرفر ويب خفيف لمنع الخمول
+// 🌟 تشغيل سيرفر ويب خفيف لمنع Render من إيقاف الخدمة
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Desktop Instance - ${ACCOUNT_NAME} is running 24/7 with 10-Step Architecture!`));
+app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Instance - ${ACCOUNT_NAME} is running 24/7 with 10-Step Architecture!`));
 
 app.get('/restart-bot', async (req, res) => {
     await logToDashboard(`🚨 [${ACCOUNT_NAME}] تم طلب إعادة التشغيل يدوياً من المطور!`, 'error');
@@ -125,11 +123,12 @@ app.get('/restart-bot', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🌐 Web Server active on port ${PORT} for ${ACCOUNT_NAME}`);
-
+    
+    // تنبيه الاستيقاظ الذاتي كل 5 دقائق
     setInterval(async () => {
         try {
             const myServerUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`; 
-            await axios.get(myServerUrl);
+            await axios.get(myServerUrl, { timeout: 10000 });
             await logToDashboard(`⏰ [Self-Ping] [${ACCOUNT_NAME}] تم تنبيه السيرفر بنجاح للحفاظ عليه مستيقظاً.`, 'info');
             await updateBotLastActive();
         } catch (e) {
@@ -142,15 +141,19 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🟢 دالة نوم ذكية تفحص أمر الإيقاف (IDLE) كل 5 ثوانٍ أثناء أي فترة انتظار
+// 🟢 دالة نوم ذكية مع حماية من أخطاء الاتصال
 async function smartSleep(ms) {
     const checkInterval = 5000; 
     let elapsed = 0;
-
+    
     while (elapsed < ms) {
-        let currentStatus = await getBotStatus();
-        if (currentStatus === 'IDLE') {
-            throw new Error('STOPPED_BY_USER');
+        try {
+            let currentStatus = await getBotStatus();
+            if (currentStatus === 'IDLE') {
+                throw new Error('STOPPED_BY_USER');
+            }
+        } catch (err) {
+            if (err.message === 'STOPPED_BY_USER') throw err;
         }
         await sleep(checkInterval);
         elapsed += checkInterval;
@@ -166,7 +169,7 @@ function randomDelay(minSeconds, maxSeconds) {
 // 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-
+    
     if (!apiKey) {
         await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
         return `${title}\n\n${description}`;
@@ -181,7 +184,7 @@ async function rewriteAdWithAI(title, description) {
 الوصف: [الوصف الجديد]`;
 
     try {
-        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 15000 });
         const validModels = (modelsResponse.data.models || []).filter(m => 
             m.supportedGenerationMethods && 
             m.supportedGenerationMethods.includes('generateContent') &&
@@ -203,7 +206,7 @@ async function rewriteAdWithAI(title, description) {
                     url: `https://generativelanguage.googleapis.com/v1beta/${exactModelName}:generateContent?key=${apiKey}`,
                     headers: { 'Content-Type': 'application/json' },
                     data: { contents: [{ parts: [{ text: promptText }] }] },
-                    timeout: 60000
+                    timeout: 45000
                 });
 
                 const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -234,50 +237,60 @@ async function logToDashboard(message, type = 'info') {
     } catch (e) {}
 }
 
-// 🤖 دالة تحميل الملفات (صورة / فيديو)
+// 🤖 دالة تحميل الملفات
 async function downloadImage(imageUrl, isVideo = false) {
     if (!imageUrl) return null;
     if (!fs.existsSync(TEMP_DIR)) {
         fs.mkdirSync(TEMP_DIR, { recursive: true });
     }
-
+    
     let ext = isVideo ? '.mp4' : '.jpg';
     const lowerUrl = imageUrl.toLowerCase();
-
+    
     if (lowerUrl.includes('.mov')) ext = '.mov';
+    else if (lowerUrl.includes('.webm')) ext = '.webm';
+    else if (lowerUrl.includes('.mkv')) ext = '.mkv';
+    else if (lowerUrl.includes('.avi')) ext = '.avi';
+    else if (lowerUrl.includes('.mp4')) ext = '.mp4';
     else if (!isVideo && lowerUrl.includes('.png')) ext = '.png';
     else if (!isVideo && (lowerUrl.includes('.webp') || lowerUrl.includes('f-webp'))) ext = '.webp';
 
     const imagePath = path.join(TEMP_DIR, `ad-media-${Date.now()}${ext}`);
-
+    
     const response = await axios({
         url: imageUrl,
         method: 'GET',
         responseType: 'stream',
-        timeout: 60000
+        timeout: 120000
     });
-
+    
     await new Promise((resolve, reject) => {
         const writer = fs.createWriteStream(imagePath);
         response.data.pipe(writer);
         writer.on('finish', resolve);
         writer.on('error', reject);
     });
-
+    
     return imagePath;
 }
 
+// 🔄 تصفير الحقول المعلقة الخاصة بهذا البوت فقط لعدم الإضرار بالبوتات الأخرى
 async function resetStuckPosts() {
-    await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت الثاني المتبقية (bot2_group)...`, 'info');
+    await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت المتبقية (${BOT_GROUP_FIELD})...`, 'info');
+    const updateObj = {};
+    updateObj[BOT_GROUP_FIELD] = null;
+    updateObj[BOT_STATUS_FIELD] = null;
+    updateObj[BOT_AI_FIELD] = null;
+
     const { error } = await supabase
         .from('publish_queue')
-        .update({ bot2_group: null, ai_final_text2: null, bot2_status: null })
-        .not('bot2_group', 'is', null);
+        .update(updateObj)
+        .not(BOT_GROUP_FIELD, 'is', null);
 
     if (error) {
         await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تنبيه أثناء تصفير الحقول المؤقتة: ${error.message}`, 'info');
     } else {
-        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير نصوص القروبات المؤقتة للبوت الثاني.`, 'success');
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير نصوص القروبات المؤقتة للبوت.`, 'success');
     }
 }
 
@@ -293,7 +306,7 @@ async function cleanOldLogs() {
     }
 }
 
-// 🔥 الجلب الذكي للبوت الثاني
+// 🔥 الجلب الذكي للمنشور التالي
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
@@ -309,7 +322,7 @@ async function getNextPendingPost() {
         for (const post of data) {
             let groups = [];
             try { groups = JSON.parse(post.groups_json || '[]'); } catch(e) {}
-            if (groups.length > 0 && post.bot2_status !== 'COMPLETED') {
+            if (groups.length > 0 && post[BOT_STATUS_FIELD] !== 'COMPLETED' && post.status !== 'COMPLETED') {
                 return post; 
             }
         }
@@ -318,75 +331,93 @@ async function getNextPendingPost() {
 }
 
 async function updatePostStatus(id, status, extra = {}) {
+    const updatePayload = { ...extra };
+    updatePayload[BOT_STATUS_FIELD] = status;
+
     const { error } = await supabase
         .from('publish_queue')
-        .update({ bot2_status: status, ...extra }) 
+        .update(updatePayload) 
         .eq('id', id);
     if (error) await logToDashboard(`⚠️ [${ACCOUNT_NAME}] خطأ تحديث الحالة: ${error.message}`, 'error');
 }
 
 // -------------------------------------------------------------------------
-// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة (بنية سطح المكتب الشاملة)
+// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة مع مراقبة حية للمراحل (Stage Watchdog)
 // -------------------------------------------------------------------------
 
+let currentStageInfo = null;
+let stageWatchdogInterval = null;
+
+function setStage(stageNumber, description) {
+    currentStageInfo = {
+        number: stageNumber,
+        name: description,
+        startedAt: Date.now(),
+        lastReportedMinute: 0
+    };
+    logToDashboard(`⏳ [المرحلة ${stageNumber}] [${ACCOUNT_NAME}] ${description}...`, 'info');
+}
+
+function startStageWatchdog() {
+    if (stageWatchdogInterval) clearInterval(stageWatchdogInterval);
+    stageWatchdogInterval = setInterval(async () => {
+        if (!currentStageInfo || !currentStageInfo.number) return;
+        const elapsedSec = Math.floor((Date.now() - currentStageInfo.startedAt) / 1000);
+        const elapsedMin = Math.floor(elapsedSec / 60);
+
+        // إرسال تنبيه في السجل عند مضي دقيقتين (ثم كل دقيقتين: 2، 4، 6 دقائق) طالما المرحلة مستمرة
+        if (elapsedMin >= 2 && elapsedMin % 2 === 0 && currentStageInfo.lastReportedMinute !== elapsedMin) {
+            currentStageInfo.lastReportedMinute = elapsedMin;
+            await logToDashboard(
+                `⏱️ [تنبيه استمرار العمل] [${ACCOUNT_NAME}] البوت لا يزال يعمل ومستمر في [المرحلة ${currentStageInfo.number}: ${currentStageInfo.name}] منذ (${elapsedMin} دقيقة)...`,
+                'info'
+            );
+        }
+    }, 10000);
+}
+
+function stopStageWatchdog() {
+    if (stageWatchdogInterval) {
+        clearInterval(stageWatchdogInterval);
+        stageWatchdogInterval = null;
+    }
+    currentStageInfo = null;
+}
+
 async function openPostBox(page) {
-    // ⏳ المرحلة 3: التبديل لتبويب مناقشة إذا وجد
-    await logToDashboard(`⏳ [المرحلة 3] [${ACCOUNT_NAME}] التهيؤ لفحص التبويبات والتبديل إلى (مناقشة)...`, 'info');
-    await smartSleep(randomDelay(8, 14));
+    // ⏳ المرحلة 3: التبديل لتبويب مناقشة إذا وجد لتخطي واجهة البيع والشراء
+    setStage(3, 'فحص التبويبات والتبديل إلى (مناقشة)');
+    await smartSleep(randomDelay(15, 25));
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
         'div[role="tab"]:has-text("Discussion")',
         'a[role="tab"]:has-text("مناقشة")',
         'a[role="tab"]:has-text("Discussion")',
-        'a[href*="/discussion"]',
         'text="عرض المناقشات"',
         'text="مناقشة"',
-        'text="Discussion"',
-        'a:has-text("المناقشات")',
-        'a:has-text("المنشورات")'
+        'text="Discussion"'
     ];
 
     for (const tabSel of discussionTabs) {
         try {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
-                await tabBtn.click({ timeout: 6000, force: true });
-                await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)...`, 'info');
-                await smartSleep(randomDelay(8, 15));
+                await tabBtn.click({ timeout: 8000, force: true });
+                await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)، ننتظر لاستقرار الواجهة...`, 'info');
+                await smartSleep(randomDelay(15, 25));
                 break;
             }
         } catch (e) {}
     }
 
-    // 🌟 إغلاق أي نوافذ تحذيرية أو إشعارات شروط مسبقة
-    const dismissBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree'];
-    for (const dBtn of dismissBtns) {
-        try {
-            const btn = page.locator(dBtn).first();
-            if (await btn.count() > 0 && await btn.isVisible()) {
-                await btn.click({ timeout: 3000, force: true });
-                await smartSleep(1500);
-            }
-        } catch(e) {}
-    }
-
-    // 🌟 تمرير متدرج (Smooth Scrolling) لتفعيل عناصر الصفحة في مجموعات التجارة
-    try {
-        await page.evaluate(async () => {
-            window.scrollBy({ top: 450, behavior: 'smooth' });
-            await new Promise(r => setTimeout(r, 1000));
-            window.scrollBy({ top: -150, behavior: 'smooth' });
-        });
-        await smartSleep(3000);
-    } catch(e) {}
-
-    // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور بعدة طرق شاملة
-    await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] بدء البحث الشامل عن محرر النشر وفتحه...`, 'info');
-    await smartSleep(randomDelay(8, 15));
+    // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور
+    setStage(4, 'البحث عن مربع النشر وفتحه');
+    await smartSleep(randomDelay(12, 20));
 
     const selectors = [
-        // 1. محددات النشر العادي
+        'div[data-sigil="m-feed-composer-opener"]',
+        'div[data-sigil*="composer"]',
         'span:has-text("اكتب شيئًا...")',
         'span:has-text("Write something...")',
         'text="اكتب شيئًا..."',
@@ -400,7 +431,13 @@ async function openPostBox(page) {
         'div[role="button"]:has-text("بم تفكر؟")',
         'div[role="button"]:has-text("What\'s on your mind?")',
         'div[role="button"]:has-text("إنشاء منشور عام...")',
+        'div[role="button"]:has-text("Create a public post...")',
+        'div[aria-label*="Create a public post"]',
+        'div[aria-label*="إنشاء منشور"]',
+        'div[aria-label*="Write something"]',
+        'div[aria-label*="اكتب شيئ"]',
         'div[role="textbox"]',
+        '[contenteditable="true"]',
         'span:has-text("اكتب شيئاً...")',
         'text="اكتب شيئاً..."',
         'div[role="button"]:has-text("اكتب شيئاً...")',
@@ -410,74 +447,83 @@ async function openPostBox(page) {
         'div[role="button"]:has-text("Write")',
         'div[role="button"]:has-text("بم تفكر")',
         'div[role="button"]:has-text("تفكر")',
+        'div[role="button"]:has-text("Photo")',
+        'div[role="button"]:has-text("Photos")',
+        'div[role="button"]:has-text("صورة")',
+        'div[role="button"]:has-text("الصور")',
+        'text="Photo"',
+        'text="Photos"',
+        'text="صورة"',
+        'text="الصور"',
         'text=/اكتب/i',
         'text=/تفكر/i',
         'text=/بم تفكر/i',
-
-        // 2. محددات مجموعات البيع والشراء الكبرى
-        'text="بدء مناقشة"',
-        'text="Start Discussion"',
-        'div[role="button"]:has-text("بدء مناقشة")',
-        'div[role="button"]:has-text("Start Discussion")',
-        'text="عرض عنصر للبيع"',
-        'text="بيع شيء"',
-        'text="Sell Something"',
-        'div[role="button"]:has-text("بيع شيء")',
-        'div[role="button"]:has-text("Sell Something")',
-        'div[aria-label*="اكتب شيئاً"]',
-        'div[aria-label*="Write something"]',
-        'div[aria-label*="بم تفكر"]',
-        'div[aria-label*="What\'s on your mind"]'
+        'a[href*="/composer/"]',
+        'a[href*="multi_step_composer"]'
     ];
 
-    // الطريقة 1: الفحص المباشر عبر Selectors
     for (const selector of selectors) {
         try {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
-                await element.scrollIntoViewIfNeeded({ timeout: 5000 });
                 await element.click({ timeout: 10000, force: true });
-                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور عبر (${selector})، ننتظر لتفتح بهدوء...`, 'info');
-                await smartSleep(randomDelay(12, 20));
+                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
+                await smartSleep(randomDelay(15, 25));
 
-                for (const cBtn of dismissBtns) {
+                const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree', 'text=قبول', 'text=Accept', 'text=إغلاق', 'text=Close', 'text=ليس الآن', 'text=Not Now'];
+                for (const cBtn of confirmBtns) {
                     try {
                         const btn = page.locator(cBtn).first();
                         if (await btn.count() > 0 && await btn.isVisible()) {
-                            await btn.click({ timeout: 4000, force: true });
-                            await smartSleep(2000);
+                            await btn.click({ timeout: 5000, force: true });
+                            await smartSleep(randomDelay(3, 6));
                         }
                     } catch(e){}
                 }
 
-                await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بنجاح`, 'success');
+                await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور عبر المحدد (${selector}) بنجاح`, 'success');
                 return true;
             }
         } catch (e) {}
     }
 
-    // الطريقة 2: البحث العميق في شجرة الـ DOM مع تفعيل الأحداث المباشرة
+    const discussionBtns = [
+        'text=بدء مناقشة', 'text=Start Discussion', 'text=مناقشة', 'text=Discussion',
+        'a[href*="/discussion"]', 'div[role="button"]:has-text("مناقشة")'
+    ];
+    for (const dSel of discussionBtns) {
+        try {
+            const dBtn = page.locator(dSel).first();
+            if (await dBtn.count() > 0 && await dBtn.isVisible()) {
+                await dBtn.click({ timeout: 10000, force: true });
+                await smartSleep(randomDelay(12, 20));
+                return true;
+            }
+        } catch (e) {}
+    }
+
     try {
         const openedByJS = await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('div[role="button"], span, div, a, button, input'));
+            const elements = Array.from(document.querySelectorAll('div[role="button"], span, div, a, [data-sigil*="composer"]'));
             const target = elements.find(el => {
-                const txt = (el.innerText || el.textContent || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '').trim();
+                const txt = (el.innerText || el.textContent || '').trim();
+                const aria = (el.getAttribute('aria-label') || '').trim();
                 return (
                     txt.includes('اكتب شيئًا') || 
+                    txt.includes('اكتب شيئاً') || 
                     txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
                     txt.includes("What's on your mind") || 
                     txt.includes('إنشاء منشور') ||
-                    txt.includes('بدء مناقشة') ||
-                    txt.includes('Start Discussion') ||
-                    txt.includes('بيع شيء') ||
-                    txt.includes('Sell Something')
+                    txt.includes('Create a public post') ||
+                    aria.includes('اكتب') ||
+                    aria.includes('Write') ||
+                    aria.includes('Create a public post') ||
+                    aria.includes('إنشاء منشور')
                 );
             });
             if (target) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 target.click();
-                target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                 return true;
             }
             return false;
@@ -485,18 +531,7 @@ async function openPostBox(page) {
 
         if (openedByJS) {
             await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بواسطة JS Event Trigger`, 'success');
-            await smartSleep(randomDelay(12, 20));
-            return true;
-        }
-    } catch (e) {}
-
-    // الطريقة 3: استكشاف أزرار الصور/الفيديو المباشرة لفتح المحرر
-    try {
-        const photoBtn = page.locator('div[aria-label="صورة/فيديو"], div[aria-label="Photo/video"], div:has-text("صورة/فيديو"), div:has-text("Photo/video")').first();
-        if (await photoBtn.count() > 0 && await photoBtn.isVisible()) {
-            await photoBtn.click({ timeout: 8000, force: true });
-            await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بالنقر على زر (صورة/فيديو) المباشر`, 'success');
-            await smartSleep(randomDelay(12, 20));
+            await smartSleep(randomDelay(15, 25));
             return true;
         }
     } catch (e) {}
@@ -506,10 +541,13 @@ async function openPostBox(page) {
 
 async function pasteTextWithLines(page, postText) {
     // ⏳ المرحلة 7: التركيز على الحقل ولصق النص بمحاكاة بشرية كاملة
-    await logToDashboard(`⏳ [المرحلة 7] [${ACCOUNT_NAME}] جاري البحث عن مربع الكتابة والتركيز عليه...`, 'info');
-    await smartSleep(randomDelay(8, 14));
+    setStage(7, 'التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية');
+    await smartSleep(randomDelay(6, 12));
 
     const targetSelectors = [
+        'textarea[name="xc_message"]',
+        'textarea[data-sigil*="composer"]',
+        'textarea',
         'div[role="dialog"] div[role="textbox"]',
         'div[role="dialog"] [contenteditable="true"]',
         'div[role="dialog"] [aria-label*="اكتب"]',
@@ -535,372 +573,534 @@ async function pasteTextWithLines(page, postText) {
 
     if (textbox) {
         try {
-            await textbox.click({ timeout: 10000, force: true });
-            await smartSleep(randomDelay(3, 6));
-            await page.evaluate(async (text) => {
-                await navigator.clipboard.writeText(text);
-            }, postText);
-            await page.keyboard.press('Control+V');
-            await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم لصق النص مع الحفاظ على الأسطر`, 'success');
+            await textbox.click({ timeout: 8000, force: true });
+            await smartSleep(randomDelay(2, 4));
+
+            const tagName = await textbox.evaluate(el => el.tagName.toLowerCase());
+            if (tagName === 'textarea' || tagName === 'input') {
+                await textbox.fill(postText);
+                await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم كتابة النص داخل حقل الـ textarea بنجاح`, 'success');
+                return;
+            }
+
+            // إدخال النص بطريقة سريعة تحافظ على الأسطر ولا تعلق في بيئة Docker/Linux السحابية
+            await page.keyboard.insertText(postText);
+            await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص مع الحفاظ على الأسطر بنجاح`, 'success');
             return;
         } catch (err) {
-            await logToDashboard(`⚠️ [المرحلة 7] [${ACCOUNT_NAME}] فشل Clipboard، سيتم استخدام التعبئة البديلة insertText...`, 'info');
+            await logToDashboard(`⚠️ [المرحلة 7] [${ACCOUNT_NAME}] تنبيه أثناء إدخال النص، محاولة بالـ DOM المباشر...`, 'info');
         }
     }
 
     try {
-        await page.evaluate(() => {
-            const activeInput = document.querySelector('div[role="dialog"] div[contenteditable="true"], div[role="dialog"] div[role="textbox"]');
+        await page.evaluate((text) => {
+            const activeInput = document.querySelector('textarea, div[contenteditable="true"], div[role="textbox"]');
             if (activeInput) {
                 activeInput.focus();
-                activeInput.click();
+                if (activeInput.tagName.toLowerCase() === 'textarea') {
+                    activeInput.value = text;
+                    activeInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    activeInput.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                    document.execCommand('insertText', false, text);
+                }
             }
-        });
-        await smartSleep(randomDelay(3, 6));
-        await page.keyboard.insertText(postText);
-        await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (insertText)`, 'success');
+        }, postText);
+        await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (DOM Trigger)`, 'success');
     } catch(e) {
         throw new Error('تعذر العثور على حقل نص صالح للكتابة داخل هذه المجموعة');
     }
 }
 
-async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
-    // 🛡️ استخراج وتأمين الرابط الصحيح والشامل للمجموعة ومنع مشاكل الـ Redirects
-    let targetUrl = (
-        group.url || 
-        group.link || 
-        group.group_url || 
-        group.fb_url || 
-        (group.id ? `https://www.facebook.com/groups/${group.id}` : '')
-    ).trim();
+async function publishToGroup(page, group, post, imagePath) {
+    startStageWatchdog();
 
-    if (!targetUrl || (!targetUrl.includes('facebook.com') && !targetUrl.startsWith('/groups/'))) {
-        throw new Error(`رابط المجموعة غير صالح أو فارغ في قاعدة البيانات: (${targetUrl || 'فارغ'})`);
-    }
-
-    targetUrl = targetUrl.replace('m.facebook.com', 'www.facebook.com').replace('web.facebook.com', 'www.facebook.com');
-    if (!targetUrl.startsWith('http')) {
-        if (targetUrl.startsWith('/groups/')) {
-            targetUrl = `https://www.facebook.com${targetUrl}`;
-        } else {
-            targetUrl = `https://${targetUrl}`;
-        }
-    }
-    
-    const separator = targetUrl.includes('?') ? '&' : '?';
-    targetUrl = `${targetUrl}${separator}sorting_setting=CHRONOLOGICAL`;
-
-    await logToDashboard(`📢 [المرحلة 1] [${ACCOUNT_NAME}] فتح المجموعة بوضع سطح المكتب: ${group.name} | الرابط: ${targetUrl}`, 'info');
-    
     try {
-        await page.goto(targetUrl, { waitUntil: 'load', timeout: 90000 });
-    } catch (navErr) {
-        if (page.isClosed()) {
-            throw new Error('انفصلت صفحة المتصفح أثناء تحميل المجموعة، جاري إعادة المحاولة بأمان...');
-        }
-    }
+        // ⏳ المرحلة 1: فتح المجموعة بوضع الجوال مع التحقق الصارم من الرابط
+        let targetUrl = (group.url || group.link || group.href || '').trim();
 
-    const loadWait = randomDelay(20, 35);
-    await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر الثقيلة...`, 'info');
-    await smartSleep(loadWait); 
+        if (!targetUrl || targetUrl === 'undefined' || targetUrl === 'null') {
+            // 🔎 البحث عن المجموعة باسمها في فيسبوك إذا لم يتوفر رابط مباشر
+            setStage(1, `البحث عن المجموعة باسمها (${group.name})`);
+            const searchUrl = `https://m.facebook.com/search/groups/?q=${encodeURIComponent(group.name)}`;
+            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+            await smartSleep(randomDelay(4, 8));
 
-    // ⏳ المرحلة 2: الفحص الأمني للجلسة (DOM API القياسي الصافي)
-    const sessionStatus = await page.evaluate(() => {
-        const bodyText = document.body ? document.body.innerText : '';
-        const hasPasswordField = document.querySelector('input[type="password"]') !== null;
-        const isLocked = bodyText.includes('تم قفل حسابك') || bodyText.includes('Your account has been locked');
-        const hasEmailInput = document.querySelector('input[name="email"]') !== null;
-        const hasLoginLink = document.querySelector('a[href*="/login"]') !== null;
-        
-        return { 
-            hasPasswordField, 
-            isLocked, 
-            isLoggedOut: hasEmailInput || (hasLoginLink && bodyText.includes('تسجيل الدخول'))
-        };
-    });
-
-    if (sessionStatus.hasPasswordField || sessionStatus.isLocked) {
-        throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint حقيقي لـ ${ACCOUNT_NAME}`);
-    }
-
-    if (sessionStatus.isLoggedOut) {
-        throw new Error(`الكوكيز لم يتم قبولها، الحساب يفتح كزائر غير مسجل دخول في ${ACCOUNT_NAME}`);
-    }
-
-    // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
-    const opened = await openPostBox(page);
-    if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
-
-    await smartSleep(randomDelay(8, 14)); 
-
-    // ⏳ المرحلة 6: رفع الميديا والانتظار الموسع لاستقرار المعاينة (إلزامية في حال وجود صورة/فيديو)
-    if (hasMediaRequired) {
-        if (!imagePath || !fs.existsSync(imagePath)) {
-            throw new Error('فشل إلزامي: الإعلان يتطلب صورة/فيديو ولكن الملف غير متوفر محلياً للرفع!');
-        }
-
-        await logToDashboard(`⏳ [المرحلة 6] [${ACCOUNT_NAME}] بدء مرحلة رفع الملف المرفق ومعاينته...`, 'info');
-        const imageTriggerSelectors = [
-            'div[aria-label="صورة/فيديو"]',
-            'div[aria-label="Photo/video"]',
-            'svg[aria-label="صورة/فيديو"]',
-            'svg[aria-label="Photo/video"]',
-            'div:has-text("صورة/فيديو")',
-            'div:has-text("Photo/video")',
-            'div[role="button"]:has(input[type="file"])'
-        ];
-
-        for (const trigSel of imageTriggerSelectors) {
             try {
-                const trigElement = page.locator(trigSel).first();
-                if (await trigElement.count() > 0 && await trigElement.isVisible()) {
-                    await trigElement.click({ timeout: 8000 });
-                    await smartSleep(randomDelay(5, 10)); 
-                    break;
+                const groupLink = await page.$('a[href*="/groups/"]');
+                if (groupLink) {
+                    const href = await groupLink.getAttribute('href');
+                    if (href) {
+                        targetUrl = href.startsWith('http') ? href : `https://m.facebook.com${href}`;
+                    }
                 }
-            } catch (e) {}
+            } catch(e) {}
         }
 
-        let isFileInjected = false;
-        try {
-            const dialogFileInput = page.locator('div[role="dialog"] input[type="file"]').first();
-            if (await dialogFileInput.count() > 0) {
-                await dialogFileInput.setInputFiles(imagePath);
-                isFileInjected = true;
-            } else {
+        if (!targetUrl || !targetUrl.includes('facebook.com')) {
+            throw new Error(`تعذر العثور على رابط صالح لمجموعة: "${group.name}"`);
+        }
+
+        targetUrl = targetUrl.replace('www.facebook.com', 'm.facebook.com');
+        if (!targetUrl.includes('m.facebook.com') && !targetUrl.includes('mbasic.facebook.com')) {
+            targetUrl = targetUrl.replace('facebook.com', 'm.facebook.com');
+        }
+        const separator = targetUrl.includes('?') ? '&' : '?';
+        targetUrl = `${targetUrl}${separator}sorting_setting=CHRONOLOGICAL`;
+
+        setStage(1, `فتح صفحة المجموعة بوضع الجوال (${group.name}) واستقرار العناصر`);
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        
+        const loadWait = randomDelay(25, 40);
+        await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر...`, 'info');
+        await smartSleep(loadWait); 
+
+        // ⏳ المرحلة 2: الفحص الأمني للجلسة واستقرار الحساب
+        setStage(2, 'الفحص الأمني للجلسة واستقرار الحساب');
+        await logToDashboard(`✅ [المرحلة 2] [${ACCOUNT_NAME}] تم تأكيد استقرار الجلسة والانتقال لفتح المنشور`, 'success');
+
+        // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
+        const opened = await openPostBox(page);
+        if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
+
+        await smartSleep(randomDelay(8, 15)); 
+
+        // ⏳ المرحلة 6: رفع الميديا والانتظار لاستقرار المعاينة
+        if (imagePath) {
+            const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi');
+            setStage(6, `رفع الملف المرفق (${isVideoFile ? 'فيديو' : 'صورة'}) ومعاينة الرفع`);
+            
+            let isFileInjected = false;
+
+            // محاولة 1: الحقن المباشر في عنصر الـ input لتفادي تعليق نافذة النظام (OS FileChooser)
+            try {
                 const allFileInputs = page.locator('input[type="file"]');
                 const count = await allFileInputs.count();
                 if (count > 0) {
-                    await allFileInputs.nth(count - 1).setInputFiles(imagePath);
+                    await allFileInputs.first().setInputFiles(imagePath, { timeout: 20000 });
                     isFileInjected = true;
+                    await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم حقن مسار الملف مباشرة في الـ input بنجاح.`, 'success');
+                }
+            } catch (e) {}
+
+            // محاولة 2: إذا لم يظهر الـ input إلا بعد نقر زر إضافة صورة/فيديو
+            if (!isFileInjected) {
+                const imageTriggerSelectors = [
+                    'div[aria-label="صورة/فيديو"]',
+                    'div[aria-label="Photo/video"]',
+                    'div[aria-label="صورة"]',
+                    'div[aria-label="Photo"]',
+                    'div[aria-label="Photos"]',
+                    'div[aria-label="الصور"]',
+                    'svg[aria-label="صورة/فيديو"]',
+                    'svg[aria-label="Photo/video"]',
+                    'svg[aria-label="صورة"]',
+                    'svg[aria-label="Photo"]',
+                    'div:has-text("صورة/فيديو")',
+                    'div:has-text("Photo/video")',
+                    'div:has-text("صورة")',
+                    'div:has-text("الصور")',
+                    'div:has-text("Photo")',
+                    'div:has-text("Photos")',
+                    'span:has-text("Photo")',
+                    'span:has-text("Photos")',
+                    'span:has-text("صورة")',
+                    'div[aria-label="صورة/مقطع فيديو"]',
+                    'div:has-text("صورة/مقطع فيديو")',
+                    'div[role="button"]:has(input[type="file"])',
+                    '[data-sigil*="photo"]',
+                    '[data-sigil*="camera"]',
+                    '[data-sigil*="media"]'
+                ];
+
+                for (const trigSel of imageTriggerSelectors) {
+                    try {
+                        const trigElement = page.locator(trigSel).first();
+                        if (await trigElement.count() > 0 && await trigElement.isVisible()) {
+                            const [fileChooser] = await Promise.all([
+                                page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null),
+                                trigElement.click({ timeout: 6000, force: true }).catch(() => {})
+                            ]);
+
+                            if (fileChooser) {
+                                await fileChooser.setFiles(imagePath);
+                                isFileInjected = true;
+                                await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم رفع الملف عبر معالج FileChooser بنجاح.`, 'success');
+                                break;
+                            }
+
+                            await smartSleep(3000);
+                            const fileInputAfter = page.locator('input[type="file"]').first();
+                            if (await fileInputAfter.count() > 0) {
+                                await fileInputAfter.setInputFiles(imagePath, { timeout: 15000 });
+                                isFileInjected = true;
+                                break;
+                            }
+                        }
+                    } catch (e) {}
                 }
             }
-        } catch (e) {}
 
-        if (!isFileInjected) {
-            throw new Error('فشل إلزامي: تعذر العثور على حقل رفع الملفات، وتم إلغاء النشر لعدم النشر كنص بدون صورة!');
-        }
-
-        const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov');
-        const waitTime = isVideoFile ? 90000 : 45000;
-
-        await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف واستقرار المعاينة...`, 'success');
-        await smartSleep(waitTime);
-
-        try {
-            await page.waitForSelector('img[src*="blob:"], video, [aria-label*="إزالة"], [aria-label*="Remove"]', { timeout: 30000 });
-            await logToDashboard(`✅ [المرحلة 6] [${ACCOUNT_NAME}] ظهرت معاينة المرفق بنجاح في المنشور`, 'success');
-        } catch (e) {
-            await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] تأكيد إضافي لوجود المرفق...`, 'info');
-        }
-
-        const extraWait = randomDelay(12, 20);
-        await logToDashboard(`⏳ [المرحلة 6] [${ACCOUNT_NAME}] ننتظر ${Math.round(extraWait/1000)} ثانية إضافية لتثبيت المعاينة...`, 'info');
-        await smartSleep(extraWait); 
-    }
-
-    await smartSleep(randomDelay(8, 14)); 
-
-    // ⏳ المرحلة 5: تجهيز أو صياغة محتوى الذكاء الاصطناعي للبوت الثاني
-    let postText = post.ai_final_text2 || post.ai_final_text || '';
-
-    if (!postText || postText.trim() === '') {
-        await logToDashboard(`🧠 [المرحلة 5] [AI] صياغة نص جديد بالذكاء الاصطناعي للبوت الثاني خصيصاً لمجموعة: ${group.name}...`, 'info');
-        const aiGeneratedContent = await rewriteAdWithAI(post.ad_title, post.ad_description);
-        postText = `${aiGeneratedContent}\n\n🔥 إعلان جديد على سوق الإعلانات الحديث`;
-
-        let fbUrl = post.facebook_url || '';
-        if (fbUrl.trim() !== '') {
-            postText += `\n\n${fbUrl.trim()}`;
-        }
-
-        try {
-            await supabase.from('publish_queue').update({ ai_final_text2: postText }).eq('id', post.id);
-        } catch(e) {}
-    } else {
-        await logToDashboard(`📌 [المرحلة 5] [Supabase] تم جلب النص الجاهز للبوت الثاني.`, 'success');
-    }
-
-    await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
-
-    // ⏳ المرحلة 7: لصق النص ومحاكاة الكتابة البشرية
-    await pasteTextWithLines(page, postText);
-
-    await page.keyboard.press('Space');
-    await smartSleep(1000);
-    await page.keyboard.press('Backspace');
-    await smartSleep(2000);
-
-    // ⏳ المرحلة 8: انتظار تفاعل النظام مع النص والروابط وتوليد بطاقة المعاينة
-    let fbUrlCheck = post.facebook_url || '';
-    if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
-        const linkWait = randomDelay(30, 45);
-        await logToDashboard(`⏳ [المرحلة 8] [${ACCOUNT_NAME}] تم إدراج رابط، ننتظر ${Math.round(linkWait/1000)} ثانية ليتفاعل النظام وتظهر معاينة الرابط بالكامل...`, 'info');
-        await smartSleep(linkWait);
-    } else {
-        const textWait = randomDelay(18, 26);
-        await logToDashboard(`⏳ [المرحلة 8] [${ACCOUNT_NAME}] تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية لتفاعل النظام...`, 'info');
-        await smartSleep(textWait); 
-    }
-
-    await smartSleep(randomDelay(8, 14)); 
-
-    // ⏳ المرحلة 9: فحص زر النشر مع التنشيط التلقائي بالـ Space
-    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] بدء فحص زر النشر وتنشيطه إن كان معطلاً...`, 'info');
-    
-    const postBtnSelectors = [
-        'div[role="dialog"] div[role="button"][aria-label="نشر"]',
-        'div[role="dialog"] div[role="button"][aria-label="Post"]',
-        'div[role="dialog"] div[role="button"]:has-text("نشر")',
-        'div[role="dialog"] div[role="button"]:has-text("Post")',
-        'div[aria-label="نشر"]',
-        'div[aria-label="Post"]',
-        'div[role="dialog"] div[role="button"]:has-text("التالي")',
-        'div[role="dialog"] div[role="button"]:has-text("Next")',
-        'button:has-text("نشر")',
-        'button:has-text("Post")'
-    ];
-
-    let clicked = false;
-
-    // 1. محاولة النقر عبر محددات Playwright مع التنشيط بالسبيس
-    for (const selector of postBtnSelectors) {
-        try {
-            const btn = page.locator(selector).first();
-            if (await btn.count() > 0 && await btn.isVisible()) {
-                let isDisabled = await btn.getAttribute('aria-disabled');
-                let retries = 0;
-
-                while (isDisabled === 'true' && retries < 8) { 
-                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، جاري إرسال Space لتنشيط المحرر... (${retries + 1}/8)`, 'info');
-
+            if (isFileInjected) {
+                // فحص ونقر أزرار المتابعة والتأكيد (Next / Done / التالي / تم) بعد اختيار الصورة
+                const mediaConfirmBtns = [
+                    'button:has-text("التالي")', 'button:has-text("Next")',
+                    'button:has-text("تم")', 'button:has-text("Done")',
+                    'div[role="button"]:has-text("التالي")', 'div[role="button"]:has-text("Next")',
+                    'div[role="button"]:has-text("تم")', 'div[role="button"]:has-text("Done")',
+                    'button:has-text("حفظ")', 'button:has-text("Save")',
+                    'div[role="button"]:has-text("حفظ")', 'div[role="button"]:has-text("Save")'
+                ];
+                for (const mBtn of mediaConfirmBtns) {
                     try {
-                        const activeTextbox = page.locator('div[role="dialog"] div[role="textbox"], div[role="dialog"] [contenteditable="true"]').first();
-                        if (await activeTextbox.count() > 0) {
-                            await activeTextbox.focus();
-                            await page.keyboard.press('Space');
-                            await smartSleep(600);
-                            await page.keyboard.press('Backspace');
+                        const btn = page.locator(mBtn).first();
+                        if (await btn.count() > 0 && await btn.isVisible()) {
+                            await btn.click({ timeout: 4000, force: true });
+                            await smartSleep(2000);
                         }
-                    } catch(e) {}
+                    } catch(e){}
+                }
 
+                const waitTime = isVideoFile ? 35000 : 15000;
+                
+                await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لمعالجة الملف ومعاينته...`, 'success');
+                await smartSleep(waitTime);
+                
+                // فحص تقدم معالجة ورفع الفيديو داخل واجهة فيسبوك
+                try {
+                    if (isVideoFile) {
+                        let uploadCheckRetries = 0;
+                        while (uploadCheckRetries < 24) {
+                            const isStillUploading = await page.evaluate(() => {
+                                const progress = document.querySelector('[role="progressbar"], .progress_bar, div[aria-valuenow]');
+                                const bodyText = document.body.innerText || '';
+                                return !!progress || bodyText.includes('جاري التحميل') || bodyText.includes('Uploading') || bodyText.includes('جاري معالجة الفيديو') || bodyText.includes('Processing video') || bodyText.includes('قيد المعالجة');
+                            });
+
+                            if (!isStillUploading) {
+                                await logToDashboard(`✅ [المرحلة 6] [${ACCOUNT_NAME}] اكتملت معالجة ورفع الفيديو في فيسبوك بنجاح!`, 'success');
+                                break;
+                            }
+                            await logToDashboard(`⏳ [المرحلة 6] [${ACCOUNT_NAME}] فيسبوك لا يزال يرفع/يعالج الفيديو... (فحص ${uploadCheckRetries + 1}/24)`, 'info');
+                            await smartSleep(5000);
+                            uploadCheckRetries++;
+                        }
+                    }
+
+                    await page.waitForSelector('img[src*="blob:"], video, [aria-label*="إزالة"], [aria-label*="Remove"], [aria-label*="حذف"]', { timeout: 25000 });
+                    await logToDashboard(`✅ [المرحلة 6] [${ACCOUNT_NAME}] ظهرت معاينة المرفق بنجاح في المنشور`, 'success');
+                } catch (e) {
+                    await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] استمرار العملية بعد انتظار المعاينة...`, 'info');
+                }
+                
+                const extraWait = randomDelay(8, 15);
+                await smartSleep(extraWait); 
+            } else {
+                await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] تعذر العثور على حقل رفع الملفات، سيتم النشر كنص فقط.`, 'info');
+            }
+        }
+        
+        await smartSleep(randomDelay(8, 15)); 
+
+        // ⏳ المرحلة 5: تجهيز أو صياغة محتوى الذكاء الاصطناعي
+        setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
+        let postText = post[BOT_AI_FIELD] || post.ai_final_text || '';
+        
+        if (!postText || postText.trim() === '') {
+            await logToDashboard(`🧠 [المرحلة 5] [AI] صياغة نص جديد بالذكاء الاصطناعي لـ ${ACCOUNT_NAME} لمجموعة: ${group.name}...`, 'info');
+            const aiGeneratedContent = await rewriteAdWithAI(post.ad_title, post.ad_description);
+            postText = `${aiGeneratedContent}\n\n🔥 إعلان جديد على سوق الإعلانات الحديث`;
+
+            let fbUrl = post.facebook_url || '';
+            if (fbUrl.trim() !== '') {
+                postText += `\n\n${fbUrl.trim()}`;
+            }
+            
+            try {
+                const aiUpdatePayload = {};
+                aiUpdatePayload[BOT_AI_FIELD] = postText;
+                await supabase.from('publish_queue').update(aiUpdatePayload).eq('id', post.id);
+            } catch(e) {}
+        } else {
+            await logToDashboard(`📌 [المرحلة 5] [Supabase] تم جلب النص الجاهز لـ ${ACCOUNT_NAME}.`, 'success');
+        }
+
+        await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
+
+        // ⏳ المرحلة 7: لصق النص ومحاكاة الكتابة البشرية
+        await pasteTextWithLines(page, postText);
+        
+        await page.keyboard.press('Space');
+        await smartSleep(1000);
+        await page.keyboard.press('Backspace');
+        await smartSleep(2000);
+
+        // ⏳ المرحلة 8: انتظار تفاعل النظام مع النص والروابط وتوليد بطاقة المعاينة
+        setStage(8, 'انتظار تفاعل النظام وتوليد بطاقة معاينة الروابط والنص');
+        let fbUrlCheck = post.facebook_url || '';
+        if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
+            const linkWait = randomDelay(35, 50);
+            await logToDashboard(`⏳ [المرحلة 8] [${ACCOUNT_NAME}] تم إدراج رابط، ننتظر ${Math.round(linkWait/1000)} ثانية لمعاينة الرابط...`, 'info');
+            await smartSleep(linkWait);
+        } else {
+            const textWait = randomDelay(20, 30);
+            await logToDashboard(`⏳ [المرحلة 8] [${ACCOUNT_NAME}] تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية لتفاعل النظام...`, 'info');
+            await smartSleep(textWait); 
+        }
+        
+        await smartSleep(randomDelay(8, 15)); 
+
+        // ⏳ المرحلة 9: فحص زر النشر والضغط عليه مع كامل المحددات والمترادفات والفحص العميق
+        setStage(9, 'فحص زر النشر والضغط عليه');
+        
+        const targetButtonSelectors = [
+            // 1. محددات فيسبوك الجوال الرسمية (Mobile Web Composer Submit)
+            'form[action*="composer"] button[type="submit"]',
+            'form[action*="composer"] input[type="submit"]',
+            'button[name="view_post"]',
+            'input[name="view_post"]',
+            'div[data-sigil*="composer-submit"]',
+            'button[data-sigil*="composer-submit"]',
+            'button[value="نشر"]',
+            'button[value="Post"]',
+            'button[value="مشاركة"]',
+            'button[value="Share"]',
+            'input[value="نشر"]',
+            'input[value="Post"]',
+            
+            // 2. محددات الحوار والنافذة
+            'div[role="dialog"] button[type="submit"]',
+            'div[role="dialog"] div[role="button"][aria-label="نشر"]',
+            'div[role="dialog"] div[role="button"][aria-label="Post"]',
+            'div[role="dialog"] div[role="button"][aria-label="مشاركة"]',
+            'div[role="dialog"] div[role="button"][aria-label="Share"]',
+            'div[role="dialog"] div[role="button"]:has-text("نشر")',
+            'div[role="dialog"] div[role="button"]:has-text("Post")',
+            'div[role="dialog"] button:has-text("نشر")',
+            'div[role="dialog"] button:has-text("Post")',
+            
+            // 3. أزرار الهيدر والـ Submit العامة
+            'header button:has-text("نشر")',
+            'header button:has-text("Post")',
+            'header div[role="button"]:has-text("نشر")',
+            'header div[role="button"]:has-text("Post")',
+            'div[data-mcomponent="ServerHeader"] div[role="button"]',
+            'button[type="submit"]:has-text("نشر")',
+            'button[type="submit"]:has-text("Post")',
+            'button[type="submit"]:has-text("مشاركة")',
+            'button[type="submit"]:has-text("Share")',
+            'div[role="button"][aria-label="نشر"]',
+            'div[role="button"][aria-label="Post"]',
+            'div[role="button"][aria-label="مشاركة"]',
+            'div[role="button"][aria-label="Share"]',
+            'div[aria-label="نشر"]',
+            'div[aria-label="Post"]',
+            'div[aria-label="مشاركة"]',
+            'div[aria-label="Share"]',
+            'div[role="button"]:has-text("نشر")',
+            'div[role="button"]:has-text("Post")',
+            'button:has-text("نشر")',
+            'button:has-text("Post")',
+            'text="نشر"',
+            'text="Post"'
+        ];
+
+        let published = false;
+
+        // المستوى 1: البحث في Playwright Locators
+        let targetEl = null;
+        let matchedSelector = '';
+
+        for (const sel of targetButtonSelectors) {
+            try {
+                const locator = page.locator(sel);
+                const count = await locator.count();
+                for (let i = 0; i < count; i++) {
+                    const el = locator.nth(i);
+                    if (await el.isVisible()) {
+                        targetEl = el;
+                        matchedSelector = sel;
+                        break;
+                    }
+                }
+                if (targetEl) break;
+            } catch (e) {}
+        }
+
+        if (targetEl) {
+            try {
+                let isDisabled = await targetEl.getAttribute('aria-disabled') || await targetEl.getAttribute('disabled');
+                let retries = 0;
+                const isVideoFile = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
+                const maxRetries = isVideoFile ? 15 : 6;
+
+                while ((isDisabled === 'true' || isDisabled === 'disabled') && retries < maxRetries) {
+                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر غير جاهز/رمادي بعد، جاري تنشيطه بالسبيس واستقرار المرفقات... (محاولة ${retries + 1}/${maxRetries})`, 'info');
+                    try {
+                        await page.evaluate(() => {
+                            const inp = document.querySelector('textarea, [contenteditable="true"], div[role="textbox"]');
+                            if (inp) {
+                                inp.focus();
+                                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                inp.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        });
+                        await page.keyboard.press('Space');
+                        await smartSleep(500);
+                        await page.keyboard.press('Backspace');
+                    } catch(e){}
                     await smartSleep(3500);
-                    isDisabled = await btn.getAttribute('aria-disabled');
+                    isDisabled = await targetEl.getAttribute('aria-disabled') || await targetEl.getAttribute('disabled');
                     retries++;
                 }
 
-                if (isDisabled === 'true') {
-                    await page.evaluate(() => {
-                        const tb = document.querySelector('div[role="dialog"] div[contenteditable="true"], div[role="dialog"] div[role="textbox"]');
-                        if (tb) {
-                            tb.focus();
-                            tb.dispatchEvent(new Event('input', { bubbles: true }));
-                            tb.dispatchEvent(new Event('change', { bubbles: true }));
+                await targetEl.click({ timeout: 8000, force: true, noWaitAfter: true });
+                published = true;
+                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر المحدد (${matchedSelector}) بنجاح!`, 'success');
+            } catch (e) {
+                await logToDashboard(`⚠️ [المرحلة 9] [${ACCOUNT_NAME}] تعذر النقر المباشر على الزر (${matchedSelector})، الانتقال للفحص العميق...`, 'info');
+            }
+        }
+
+        // المستوى 2: الفحص العميق الموجه لنموذج النشر في الـ DOM (Native JS Event Trigger)
+        if (!published) {
+            await logToDashboard(`🔍 [المرحلة 9] [${ACCOUNT_NAME}] جاري الفحص العميق في شجرة الـ DOM للعثور على زر النشر...`, 'info');
+            
+            published = await page.evaluate(() => {
+                // 1. فحص زر الـ Submit الخاص بالكومبوزر حصراً
+                const composerForm = document.querySelector('form[action*="composer"], form[data-pagelet*="Composer"], form[data-sigil*="m-composer"]');
+                if (composerForm) {
+                    const submitBtn = composerForm.querySelector('button[type="submit"], input[type="submit"], button[name="view_post"], input[name="view_post"], [data-sigil*="composer-submit"]');
+                    if (submitBtn) {
+                        submitBtn.click();
+                        submitBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        return true;
+                    }
+                    if (typeof composerForm.submit === 'function') {
+                        composerForm.submit();
+                        return true;
+                    }
+                }
+
+                // 2. فحص أزرار الـ Submit ذات الأسماء الصريحة للنشر
+                const directButtons = Array.from(document.querySelectorAll(
+                    '[data-sigil*="composer-submit"], button[name="view_post"], input[name="view_post"], button[value="نشر"], button[value="Post"]'
+                ));
+                for (const btn of directButtons) {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        btn.click();
+                        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        return true;
+                    }
+                }
+
+                // 3. فحص الأزرار التي تحتوي نص نشر أو post وتكون مرئية
+                const allButtons = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a[role="button"]'));
+                for (const btn of allButtons) {
+                    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                    const aria = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
+                    if (txt === 'نشر' || txt === 'post' || aria === 'نشر' || aria === 'post' || txt === 'مشاركة' || txt === 'share') {
+                        const rect = btn.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            btn.click();
+                            btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                            return true;
                         }
-                    });
-                    await smartSleep(2000);
-                    isDisabled = await btn.getAttribute('aria-disabled');
+                    }
                 }
 
-                if (isDisabled === 'true') {
-                    throw new Error('زر النشر استمر معطلاً (رمادي) لفترة طويلة.');
-                }
-
-                await btn.click({ timeout: 15000, force: true });
-                clicked = true;
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر (${selector}) بنجاح!`, 'success');
-                await smartSleep(4000);
-                break;
-            }
-        } catch (e) {
-            if (e.message.includes('استمر معطلاً')) throw e;
-        }
-    }
-
-    // 2. إذا لم يُنقر، فحص عميق في شجرة DOM Native Click
-    if (!clicked) {
-        clicked = await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('div[role="button"], button'));
-            const target = buttons.find(b => {
-                const txt = (b.innerText || b.textContent || b.getAttribute('aria-label') || '').trim();
-                return txt === 'نشر' || txt === 'Post' || txt === 'التالي' || txt === 'Next';
+                return false;
             });
-            if (target) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                target.click();
-                return true;
+
+            if (published) {
+                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر الفحص العميق (Native JS DOM Click) بنجاح!`, 'success');
             }
-            return false;
+        }
+
+        // ⏳ المرحلة 10: مراقبة وتأكيد خروج المنشور واختفاء شاشة الكتابة
+        setStage(10, 'متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة');
+        await smartSleep(randomDelay(8, 15));
+
+        // التحقق الحقيقي الصارم من إرسال المنشور
+        const checkResult = await page.evaluate(() => {
+            const bodyText = document.body.innerText || '';
+            
+            // تحقق حقيقي وصريح من مراجعة الأدمن (تجنب كلمة "مسؤول" العامة)
+            const isPendingAdmin = 
+                bodyText.includes('منشورك قيد المراجعة') ||
+                bodyText.includes('تم إرسال المنشور للمسؤول') ||
+                bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
+                bodyText.includes('بانتظار موافقة المسؤول') ||
+                bodyText.includes('بانتظار الموافقة') ||
+                bodyText.includes('pending admin approval') ||
+                bodyText.includes('submitted to admin') ||
+                bodyText.includes('post is pending');
+
+            // فحص هل حقل الكتابة لا يزال مفتوحاً والنص داخله
+            const activeInput = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[contenteditable="true"], div[role="textbox"]');
+            const isInputStillPresent = activeInput && activeInput.offsetParent !== null && (activeInput.innerText || activeInput.value || '').trim().length > 10;
+
+            // فحص هل رابط الصفحة الحالي لا يزال في صفحة الكومبوزر
+            const isStillInComposerUrl = window.location.href.includes('/composer/') || window.location.href.includes('composer');
+
+            return {
+                isPendingAdmin,
+                isInputStillPresent,
+                isStillInComposerUrl
+            };
         });
 
-        if (clicked) {
-            await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر الـ DOM Click!`, 'success');
-            await smartSleep(4000);
-        }
-    }
-
-    // 3. دعم خطوة تأكيد (التالي/Next) ثم (نشر) لمجموعات التجارة والبيع
-    try {
-        const nextConfirmBtn = page.locator('div[role="dialog"] div[role="button"]:has-text("نشر"), div[role="dialog"] div[role="button"]:has-text("Post")').first();
-        if (await nextConfirmBtn.count() > 0 && await nextConfirmBtn.isVisible()) {
-            await nextConfirmBtn.click({ timeout: 8000, force: true });
-            await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر النهائي بعد خطوة (التالي)!`, 'success');
-        }
-    } catch(e) {}
-
-    if (!clicked) {
-        throw new Error('فشل العثور على زر النشر أو النقر عليه داخل نافذة فيسبوك!');
-    }
-
-    // ⏳ المرحلة 10: مراقبة إغلاق نافذة النشر أو قبول موافقة الأدمن
-    await logToDashboard(`⏳ [المرحلة 10] [${ACCOUNT_NAME}] متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة...`, 'info');
-    try {
-        await page.waitForSelector('div[role="dialog"]', { state: 'hidden', timeout: 90000 });
-        await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] اختفت نافذة النشر بنجاح! المنشور الآن في المجموعة.`, 'success');
-    } catch (e) {
-        const isPendingAdmin = await page.evaluate(() => {
-            const bodyText = document.body ? document.body.innerText : '';
-            return bodyText.includes('قيد المراجعة') || bodyText.includes('مسؤول') || bodyText.includes('pending') || bodyText.includes('admin');
-        });
-
-        if (isPendingAdmin) {
+        if (checkResult.isPendingAdmin) {
             await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
-        } else {
-            throw new Error('تم النقر على النشر لكن نافذة فيسبوك لم تُغلق!');
-        }
-    }
+        } else if (checkResult.isInputStillPresent || checkResult.isStillInComposerUrl) {
+            // محاولة نقر أخيرة طارئة قبل إعلان الفشل
+            const emergencyClicked = await page.evaluate(() => {
+                const submitBtn = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"]');
+                if (submitBtn) { submitBtn.click(); return true; }
+                return false;
+            });
 
-    let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov'));
-    let finalWait = isUploadedVideo ? 25000 : 15000;
-    await smartSleep(finalWait); 
+            if (emergencyClicked) {
+                await smartSleep(10000);
+                await logToDashboard(`🚀 [المرحلة 10] [${ACCOUNT_NAME}] تم تنفيذ نقرة الإرسال الطارئة بنجاح!`, 'success');
+            } else {
+                throw new Error('تعذر إرسال المنشور؛ نافذة النشر لا تزال مفتوحة ولم يتم تنفيذ أمر النشر.');
+            }
+        } else {
+            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم تأكيد نشر المنشور بنجاح واختفاء واجهة التحرير!`, 'success');
+        }
+
+        let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
+        let finalWait = isUploadedVideo ? 30000 : 12000;
+        await smartSleep(finalWait); 
+    } finally {
+        stopStageWatchdog();
+    }
 }
 
 async function processOnePost(post) {
     await logToDashboard(`🔥 [${ACCOUNT_NAME}] بدأ معالجة الإعلان: ${post.ad_title}`, 'info');
-
+    
     await updatePostStatus(post.id, 'RUNNING', { started_at: new Date() });
     await updateBotLastActive('RUNNING');
 
     let mediaUrl = '';
     let isVideoPost = false; 
-    let hasMediaRequired = false;
 
     if (post.ad_video && post.ad_video.trim() !== '') {
         mediaUrl = post.ad_video.trim();
         isVideoPost = true; 
-        hasMediaRequired = true;
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (ad_video): ${mediaUrl}`, 'info');
     } else if (post.video_url && post.video_url.trim() !== '') {
         mediaUrl = post.video_url.trim();
-        isVideoPost = true; 
-        hasMediaRequired = true;
+        isVideoPost = true;
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (video_url): ${mediaUrl}`, 'info');
     } else if (post.ad_image && post.ad_image.trim() !== '') {
         mediaUrl = post.ad_image.trim();
-        hasMediaRequired = true;
         const lowerImg = mediaUrl.toLowerCase();
         if (lowerImg.includes('.mp4') || lowerImg.includes('.mov') || lowerImg.includes('.webm') || lowerImg.includes('.mkv') || lowerImg.includes('.avi')) {
-            isVideoPost = true; 
+            isVideoPost = true;
             await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو عبر حقل الصورة (ad_image): ${mediaUrl}`, 'info');
         } else {
             await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد رابط صورة في السوبيس (ad_image): ${mediaUrl}`, 'info');
@@ -908,21 +1108,18 @@ async function processOnePost(post) {
     }
 
     let imagePath = null;
-    if (hasMediaRequired && mediaUrl !== '') {
+    if (mediaUrl !== '') {
         try {
             imagePath = await downloadImage(mediaUrl, isVideoPost);
-            if (imagePath) {
-                await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح وجاهز للرفع: ${imagePath}`, 'success');
-            } else {
-                throw new Error('فشل تحميل مسار الصورة');
-            }
+            if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح: ${imagePath}`, 'success');
         } catch (err) {
-            await logToDashboard(`❌ [${ACCOUNT_NAME}] خطأ حرج: فشل تحميل الصورة/الفيديو (${err.message})، تم إيقاف النشر لعدم النشر بدون ميديا.`, 'error');
-            await updatePostStatus(post.id, 'FAILED', { error_message: JSON.stringify([{ name: 'All Groups', error: `فشل تحميل ملف الميديا المطلوب: ${err.message}` }]) });
-            return;
+            await logToDashboard(`⚠️ [${ACCOUNT_NAME}] فشل تحميل الملف، سيتم النشر كنص فقط: ${err.message}`, 'info');
         }
+    } else {
+        await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
     }
 
+    // 🌟 إعدادات متصفح منخفضة استهلاك الذاكرة مخصصة لـ Render مع دعم معالجة الميديا
     const browser = await chromium.launch({
         headless: true,
         args: [
@@ -931,7 +1128,6 @@ async function processOnePost(post) {
             '--disable-dev-shm-usage',
             '--disable-blink-features=AutomationControlled',
             '--disable-gpu',
-            '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-service-autorun',
             '--password-store=basic',
@@ -941,16 +1137,26 @@ async function processOnePost(post) {
             '--disable-default-apps',
             '--mute-audio',
             '--no-zygote',
-            '--disable-accelerated-video-decode',
             '--disable-infobars',
             '--hide-scrollbars'
         ]
     });
 
     const context = await browser.newContext({
-        viewport: { width: 1280, height: 800 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        viewport: { width: 393, height: 851 },
+        isMobile: true,
+        hasTouch: true,
+        userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write']
+    });
+
+    // 🌟 حظر الخطوط فقط لتسريع التصفح وتوفير الذاكرة مع السماح لحركة الميديا والفيديو
+    await context.route('**/*', (route) => {
+        const resourceType = route.request().resourceType();
+        if (resourceType === 'font') {
+            return route.abort();
+        }
+        return route.continue();
     });
 
     if (fs.existsSync(COOKIE_FILE)) {
@@ -958,7 +1164,7 @@ async function processOnePost(post) {
             await logToDashboard(`🍪 [${ACCOUNT_NAME}] جاري قراءة وتنسيق الكوكيز للحساب السحابي (${COOKIE_FILE})...`, 'info');
             const cookiesString = fs.readFileSync(COOKIE_FILE, 'utf8');
             let rawCookies = JSON.parse(cookiesString);
-
+            
             const formattedCookies = rawCookies.map(cookie => {
                 const c = { ...cookie };
                 if (typeof c.sameSite === 'string') {
@@ -985,8 +1191,7 @@ async function processOnePost(post) {
 
     let successCount = post.success_count || 0;
     let failedCount = post.failed_count || 0;
-
-    // 🌟 جلب وحفظ كافة الأخطاء السابقة لعدم مسح أي مجموعة فشلت
+    
     let failedGroups = [];
     try {
         if (post.error_message && post.error_message.trim() !== '' && post.error_message !== 'null') {
@@ -1001,7 +1206,6 @@ async function processOnePost(post) {
 
     try {
         while (true) {
-
             // 🛑 1. فحص الحد اليومي (15 مجموعة)
             const limitReached = await checkDailyLimit();
             if (limitReached) {
@@ -1042,7 +1246,7 @@ async function processOnePost(post) {
             const updatePayload = {
                 groups_json: JSON.stringify(newRemaining)
             };
-            try { updatePayload.bot2_group = JSON.stringify(targetGroup); } catch(e) {}
+            try { updatePayload[BOT_GROUP_FIELD] = JSON.stringify(targetGroup); } catch(e) {}
 
             const { error: updateErr } = await supabase
                 .from('publish_queue')
@@ -1054,22 +1258,36 @@ async function processOnePost(post) {
                 continue;
             }
 
-            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) الخاصة بـ البوت الثاني وحذفها من الطابور لضمان التوازي.`, 'success');
+            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) الخاصة بـ ${ACCOUNT_NAME} وحذفها من الطابور لضمان التوازي.`, 'success');
 
             const page = await context.newPage();
-
+            
             page.on('dialog', async dialog => {
                 try { await dialog.accept(); } catch(e) {}
             });
 
+            page.on('filechooser', async fileChooser => {
+                try {
+                    if (imagePath && fs.existsSync(imagePath)) {
+                        await fileChooser.setFiles(imagePath);
+                    } else {
+                        await fileChooser.cancel();
+                    }
+                } catch(e) {}
+            });
+
             try {
-                // 🚀 تشغيل النشر بالمراحل المستقلة مع فرض وجود الصورة
-                await publishToGroup(page, targetGroup, freshPost, imagePath, hasMediaRequired);
+                // 🚀 إرسال حالة (جاري النشر) لتظهر برتقالية في لوحة التحكم
+                let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
+                await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
+
+                // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
+                await publishToGroup(page, targetGroup, freshPost, imagePath);
                 successCount++;
-
+                
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiText = latestPost?.ai_final_text2 || latestPost?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
-
+                let finalAiText = latestPost?.[BOT_AI_FIELD] || latestPost?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
+                
                 await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText);
                 await incrementBotCounters();
 
@@ -1079,52 +1297,59 @@ async function processOnePost(post) {
                     break;
                 }
 
-                const isCheckpoint = err.message.includes('Checkpoint حقيقي');
-                if (isCheckpoint) {
-                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت حقيقي! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
+                const isFatalCheckpoint = err.message && err.message.startsWith('FATAL_CHECKPOINT_OR_LOGIN_EXPIRED');
+                if (isFatalCheckpoint) {
+                    await logToDashboard(`🚨 [خطر] ${err.message}. تم إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
                     await updateBotLastActive('IDLE');
                     await page.close();
                     break;
                 }
 
                 failedCount++;
-                // 🌟 توثيق الخطأ الدقيق للمجموعة فوراً في مصفوفة الفشل
-                failedGroups.push({ 
-                    name: targetGroup.name || 'بدون اسم', 
-                    url: targetGroup.url || targetGroup.link || '', 
-                    error: err.message,
-                    failed_at: new Date().toISOString()
-                });
-
+                failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
-
+                
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiTextFail = latestPostFail?.ai_final_text2 || latestPostFail?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
-
+                let finalAiTextFail = latestPostFail?.[BOT_AI_FIELD] || latestPostFail?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
+                
                 await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail);
 
             } finally {
-                if (!page.isClosed()) {
-                    await page.close();
-                }
+                await page.close();
                 await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم تدمير صفحة المجموعة وتفريغ الذاكرة.`, 'info');
 
-                // 🌟 تحديث قاعدة البيانات وسجل الأخطاء بعد كل مجموعة فوراً
+                // دمج الأخطاء مع أي أخطاء سابقة مسجلة لضمان عدم ضياع أي مجموعة إطلاقاً
+                let currentAllErrors = [...failedGroups];
+                try {
+                    const { data: latestRow } = await supabase.from('publish_queue').select('error_message').eq('id', post.id).single();
+                    if (latestRow && latestRow.error_message) {
+                        const parsed = JSON.parse(latestRow.error_message);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(p => {
+                                if (!currentAllErrors.some(c => (c.name && c.name === p.name) || (c.url && c.url === p.url))) {
+                                    currentAllErrors.push(p);
+                                }
+                            });
+                        }
+                    }
+                } catch(e){}
+
                 const resetPayload = {
                     success_count: successCount,
-                    failed_count: failedCount,
-                    error_message: JSON.stringify(failedGroups)
+                    failed_count: currentAllErrors.length,
+                    error_message: JSON.stringify(currentAllErrors)
                 };
                 try {
-                    resetPayload.bot2_group = null;
+                    resetPayload[BOT_GROUP_FIELD] = null;
+                    resetPayload[BOT_AI_FIELD] = null;
                 } catch(e) {}
 
                 await supabase
                     .from('publish_queue')
                     .update(resetPayload)
                     .eq('id', post.id);
-
-                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات والأخطاء في قاعدة البيانات.`, 'info');
+            
+                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات والأخطاء.`, 'info');
             }
 
             const { data: checkData } = await supabase.from('publish_queue').select('groups_json').eq('id', post.id).single();
@@ -1157,16 +1382,16 @@ async function processOnePost(post) {
     try { finalGroups = JSON.parse(finalPost.groups_json || '[]'); } catch(e){}
 
     if (finalGroups.length === 0 && failedCount === 0) {
-        await updatePostStatus(post.id, 'COMPLETED', { published_at: new Date(), error_message: null });
+        await updatePostStatus(post.id, 'COMPLETED', { published_at: new Date(), error_message: null, status: 'published' });
         await logToDashboard(`✅ [${ACCOUNT_NAME}] تم نشر الإعلان في المجموعات بنجاح.`, 'success');
     } else if (finalGroups.length === 0) {
-        await updatePostStatus(post.id, 'FAILED', { error_message: JSON.stringify(failedGroups) });
+        await updatePostStatus(post.id, 'FAILED', { error_message: JSON.stringify(failedGroups), status: 'failed' });
         await logToDashboard(`❌ [${ACCOUNT_NAME}] اكتملت المجموعات مع وجود إخفاقات مخزنة في الأخطاء. تم تغيير الحالة إلى (FAILED).`, 'error');
     }
 }
 
 async function start() {
-    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثاني بنظام سطح المكتب الشامل...`, 'info');
+    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت بنظام المراحل الـ 10...`, 'info');
 
     await resetStuckPosts();
     await cleanOldLogs();
@@ -1192,7 +1417,7 @@ async function start() {
 
         // 🛑 2. فحص مستمر لحالة (IDLE) في وضع الانتظار
         let currentStatus = await getBotStatus();
-
+        
         if (currentStatus === 'IDLE') {
             await updateBotLastActive('IDLE'); 
             idleLogTimer++;
