@@ -706,19 +706,30 @@ async function publishToGroup(page, group, post, imagePath) {
             throw new Error(`تعذر العثور على رابط صالح لمجموعة: "${group.name}"`);
         }
 
-        targetUrl = targetUrl.replace('www.facebook.com', 'm.facebook.com');
-        if (!targetUrl.includes('m.facebook.com') && !targetUrl.includes('mbasic.facebook.com')) {
-            targetUrl = targetUrl.replace('facebook.com', 'm.facebook.com');
+        // ضمان هيكل الرابط الصحيح بوجود الشرطة المائلة بعد معرّف المجموعة
+        let cleanGroupUrl = targetUrl.split('?')[0].replace(/\/+$/, '') + '/';
+        if (cleanGroupUrl.includes('www.facebook.com')) {
+            targetUrl = cleanGroupUrl.replace('www.facebook.com', 'm.facebook.com');
+        } else if (!cleanGroupUrl.includes('m.facebook.com') && !cleanGroupUrl.includes('mbasic.facebook.com')) {
+            targetUrl = cleanGroupUrl.replace('facebook.com', 'm.facebook.com');
+        } else {
+            targetUrl = cleanGroupUrl;
         }
-        const separator = targetUrl.includes('?') ? '&' : '?';
-        targetUrl = `${targetUrl}${separator}sorting_setting=CHRONOLOGICAL`;
+        targetUrl = `${targetUrl}?sorting_setting=CHRONOLOGICAL`;
 
         setStage(1, `فتح صفحة المجموعة بوضع الجوال (${group.name}) واستقرار العناصر`);
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
         
-        const loadWait = randomDelay(22, 34);
+        const loadWait = randomDelay(15, 25);
         await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر...`, 'info');
         await smartSleep(loadWait); 
+
+        // إذا تم تحويل الحساب إلى الصفحة الرئيسية بدلاً من المجموعة، ننتقل مباشرة للرابط النظيف
+        if (page.url() === 'https://m.facebook.com/' || page.url() === 'https://m.facebook.com' || !page.url().includes('/groups/')) {
+            await logToDashboard(`🔄 [المرحلة 1] [${ACCOUNT_NAME}] إعادة توجيه مباشر لصفحة المجموعة...`, 'info');
+            await page.goto(cleanGroupUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+            await smartSleep(randomDelay(10, 18));
+        } 
 
         // ⏳ المرحلة 2: الفحص الأمني للجلسة واستقرار الحساب
         setStage(2, 'الفحص الأمني للجلسة واستقرار الحساب');
