@@ -115,7 +115,7 @@ function getMemoryLog() {
 // 🌟 تشغيل سيرفر ويب خفيف لمنع الخمول
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Instance - ${ACCOUNT_NAME} is running 24/7 with 10-Step Architecture!`));
+app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Desktop Instance - ${ACCOUNT_NAME} is running 24/7 with 10-Step Architecture!`));
 
 app.get('/restart-bot', async (req, res) => {
     await logToDashboard(`🚨 [${ACCOUNT_NAME}] تم طلب إعادة التشغيل يدوياً من المطور!`, 'error');
@@ -326,7 +326,7 @@ async function updatePostStatus(id, status, extra = {}) {
 }
 
 // -------------------------------------------------------------------------
-// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة (بنية البحث الشامل 360 درجة)
+// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة (بنية سطح المكتب الشاملة)
 // -------------------------------------------------------------------------
 
 async function openPostBox(page) {
@@ -565,7 +565,7 @@ async function pasteTextWithLines(page, postText) {
 }
 
 async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
-    // 🛡️ استخراج الرابط الصحيح والشامل للمجموعة ومنع الانهيار للروابط الفارغة
+    // 🛡️ استخراج وتأمين الرابط الصحيح والشامل للمجموعة ومنع مشاكل الـ Redirects
     let targetUrl = (
         group.url || 
         group.link || 
@@ -591,7 +591,14 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
     targetUrl = `${targetUrl}${separator}sorting_setting=CHRONOLOGICAL`;
 
     await logToDashboard(`📢 [المرحلة 1] [${ACCOUNT_NAME}] فتح المجموعة بوضع سطح المكتب: ${group.name} | الرابط: ${targetUrl}`, 'info');
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    
+    try {
+        await page.goto(targetUrl, { waitUntil: 'load', timeout: 90000 });
+    } catch (navErr) {
+        if (page.isClosed()) {
+            throw new Error('انفصلت صفحة المتصفح أثناء تحميل المجموعة، جاري إعادة المحاولة بأمان...');
+        }
+    }
 
     const loadWait = randomDelay(20, 35);
     await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر الثقيلة...`, 'info');
@@ -738,7 +745,7 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
 
     await smartSleep(randomDelay(8, 14)); 
 
-    // ⏳ المرحلة 9: فحص زر النشر مع التنشيط التلقائي بالـ Space في حال كان الزر رمادي معطلاً
+    // ⏳ المرحلة 9: فحص زر النشر مع التنشيط التلقائي بالـ Space
     await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] بدء فحص زر النشر وتنشيطه إن كان معطلاً...`, 'info');
     
     const postBtnSelectors = [
@@ -767,7 +774,6 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
                 while (isDisabled === 'true' && retries < 8) { 
                     await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، جاري إرسال Space لتنشيط المحرر... (${retries + 1}/8)`, 'info');
 
-                    // 🌟 التركيز على مربع النص وإدخال مسافة لتنشيط زر النشر فوراً
                     try {
                         const activeTextbox = page.locator('div[role="dialog"] div[role="textbox"], div[role="dialog"] [contenteditable="true"]').first();
                         if (await activeTextbox.count() > 0) {
@@ -784,7 +790,6 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
                 }
 
                 if (isDisabled === 'true') {
-                    // محاولة تحفيز إضافية عبر جافاسكريبت المباشر للـ DOM
                     await page.evaluate(() => {
                         const tb = document.querySelector('div[role="dialog"] div[contenteditable="true"], div[role="dialog"] div[role="textbox"]');
                         if (tb) {
@@ -981,6 +986,7 @@ async function processOnePost(post) {
     let successCount = post.success_count || 0;
     let failedCount = post.failed_count || 0;
 
+    // 🌟 جلب وحفظ كافة الأخطاء السابقة لعدم مسح أي مجموعة فشلت
     let failedGroups = [];
     try {
         if (post.error_message && post.error_message.trim() !== '' && post.error_message !== 'null') {
@@ -1082,7 +1088,14 @@ async function processOnePost(post) {
                 }
 
                 failedCount++;
-                failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
+                // 🌟 توثيق الخطأ الدقيق للمجموعة فوراً في مصفوفة الفشل
+                failedGroups.push({ 
+                    name: targetGroup.name || 'بدون اسم', 
+                    url: targetGroup.url || targetGroup.link || '', 
+                    error: err.message,
+                    failed_at: new Date().toISOString()
+                });
+
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
 
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
@@ -1091,9 +1104,12 @@ async function processOnePost(post) {
                 await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail);
 
             } finally {
-                await page.close();
+                if (!page.isClosed()) {
+                    await page.close();
+                }
                 await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم تدمير صفحة المجموعة وتفريغ الذاكرة.`, 'info');
 
+                // 🌟 تحديث قاعدة البيانات وسجل الأخطاء بعد كل مجموعة فوراً
                 const resetPayload = {
                     success_count: successCount,
                     failed_count: failedCount,
@@ -1101,7 +1117,6 @@ async function processOnePost(post) {
                 };
                 try {
                     resetPayload.bot2_group = null;
-                    resetPayload.ai_final_text2 = null;
                 } catch(e) {}
 
                 await supabase
@@ -1109,7 +1124,7 @@ async function processOnePost(post) {
                     .update(resetPayload)
                     .eq('id', post.id);
 
-                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات والأخطاء.`, 'info');
+                await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات والأخطاء في قاعدة البيانات.`, 'info');
             }
 
             const { data: checkData } = await supabase.from('publish_queue').select('groups_json').eq('id', post.id).single();
@@ -1151,7 +1166,7 @@ async function processOnePost(post) {
 }
 
 async function start() {
-    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثاني بنظام المراحل الـ 10 الشامل...`, 'info');
+    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثاني بنظام سطح المكتب الشامل...`, 'info');
 
     await resetStuckPosts();
     await cleanOldLogs();
