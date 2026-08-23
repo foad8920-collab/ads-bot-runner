@@ -14,7 +14,7 @@ try {
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
- 
+
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -44,7 +44,7 @@ async function getBotStatus() {
 async function updateBotLastActive(forceStatus = null) {
     const updateData = { bot_name: BOT_DB_NAME, last_active: new Date() };
     if (forceStatus) updateData.status = forceStatus;
-    
+
     await supabase.from('bot_counters').upsert(updateData, { onConflict: 'bot_name' });
 }
 
@@ -68,7 +68,7 @@ async function incrementBotCounters() {
         const { data, error } = await supabase.from('bot_counters').select('daily_count, total_count').eq('bot_name', BOT_DB_NAME).single();
         let daily = (data && data.daily_count) ? data.daily_count : 0;
         let total = (data && data.total_count) ? data.total_count : 0;
-        
+
         const newDaily = daily + 1;
         const newTotal = total + 1;
         const targetStatus = newDaily >= 15 ? 'IDLE' : 'RUNNING';
@@ -119,7 +119,7 @@ app.get('/restart-bot', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🌐 Web Server active on port ${PORT} for ${ACCOUNT_NAME}`);
-    
+
     // تنبيه الاستيقاظ الذاتي كل 5 دقائق
     setInterval(async () => {
         try {
@@ -132,7 +132,7 @@ app.listen(PORT, () => {
         }
     }, 300000);
 });
- 
+
 const supabase = createClient(
     'https://bmsfhqmsovicpgxxwsgi.supabase.co',
     'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef'
@@ -148,7 +148,7 @@ function sleep(ms) {
 async function smartSleep(ms) {
     const checkInterval = 5000; 
     let elapsed = 0;
-    
+
     while (elapsed < ms) {
         let currentStatus = await getBotStatus();
         if (currentStatus === 'IDLE') {
@@ -168,7 +168,7 @@ function randomDelay(minSeconds, maxSeconds) {
 // 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-    
+
     if (!apiKey) {
         await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
         return `${title}\n\n${description}`;
@@ -242,29 +242,29 @@ async function downloadImage(imageUrl, isVideo = false) {
     if (!fs.existsSync(TEMP_DIR)) {
         fs.mkdirSync(TEMP_DIR, { recursive: true });
     }
-    
+
     let ext = isVideo ? '.mp4' : '.jpg';
     const lowerUrl = imageUrl.toLowerCase();
-    
+
     if (lowerUrl.includes('.mov')) ext = '.mov';
     else if (!isVideo && lowerUrl.includes('.png')) ext = '.png';
     else if (!isVideo && (lowerUrl.includes('.webp') || lowerUrl.includes('f-webp'))) ext = '.webp';
 
     const imagePath = path.join(TEMP_DIR, `ad-media-${Date.now()}${ext}`);
-    
+
     const response = await axios({
         url: imageUrl,
         method: 'GET',
         responseType: 'stream'
     });
-    
+
     await new Promise((resolve, reject) => {
         const writer = fs.createWriteStream(imagePath);
         response.data.pipe(writer);
         writer.on('finish', resolve);
         writer.on('error', reject);
     });
-    
+
     return imagePath;
 }
 
@@ -532,14 +532,24 @@ async function publishToGroup(page, group, post, imagePath) {
 
     await logToDashboard(`📢 [المرحلة 1] [${ACCOUNT_NAME}] فتح المجموعة بوضع الجوال: ${group.name} | الرابط: ${targetUrl}`, 'info');
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
-    
+
     const loadWait = randomDelay(35, 50);
     await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر الثقيلة...`, 'info');
     await smartSleep(loadWait); 
 
-    // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint
-    if (page.url().includes('login') || page.url().includes('checkpoint')) {
-        throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint لـ ${ACCOUNT_NAME}`);
+    // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint الحقيقي (فحص دقيق للعناصر وليس مجرد روابط وهمية)
+    const isLockedOut = await page.evaluate(() => {
+        const bodyText = document.body ? document.body.innerText : '';
+        const hasPasswordInput = document.querySelector('input[type="password"]') !== null;
+        const hasRealLockText = bodyText.includes('تم قفل حسابك') || 
+                               bodyText.includes('Your account has been locked') ||
+                               bodyText.includes('موافقة على تسجيل الدخول المطلوبة') ||
+                               bodyText.includes('Login approval needed');
+        return hasPasswordInput || hasRealLockText;
+    });
+
+    if (isLockedOut) {
+        throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint حقيقي لـ ${ACCOUNT_NAME}`);
     }
 
     // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
@@ -591,17 +601,17 @@ async function publishToGroup(page, group, post, imagePath) {
         if (isFileInjected) {
             const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov');
             const waitTime = isVideoFile ? 90000 : 45000;
-            
+
             await logToDashboard(`🖼️ [المرحلة 6] [${ACCOUNT_NAME}] تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف على خوادم فيسبوك واستقرار المعاينة...`, 'success');
             await smartSleep(waitTime);
-            
+
             try {
                 await page.waitForSelector('img[src*="blob:"], video, [aria-label*="إزالة"], [aria-label*="Remove"]', { timeout: 30000 });
                 await logToDashboard(`✅ [المرحلة 6] [${ACCOUNT_NAME}] ظهرت معاينة المرفق بنجاح في المنشور`, 'success');
             } catch (e) {
                 await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] استمرار الانتظار لمعاينة المرفق للاحتياط...`, 'info');
             }
-            
+
             const extraWait = randomDelay(20, 35);
             await logToDashboard(`⏳ [المرحلة 6] [${ACCOUNT_NAME}] ننتظر ${Math.round(extraWait/1000)} ثانية إضافية لتثبيت المعاينة...`, 'info');
             await smartSleep(extraWait); 
@@ -609,12 +619,12 @@ async function publishToGroup(page, group, post, imagePath) {
             await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] تعذر العثور على حقل الـ input الصحيح للرفع`, 'error');
         }
     }
-    
+
     await smartSleep(randomDelay(10, 18)); 
 
     // ⏳ المرحلة 5: تجهيز أو صياغة محتوى الذكاء الاصطناعي للبوت الثاني
     let postText = post.ai_final_text2 || post.ai_final_text || '';
-    
+
     if (!postText || postText.trim() === '') {
         await logToDashboard(`🧠 [المرحلة 5] [AI] صياغة نص جديد بالذكاء الاصطناعي للبوت الثاني خصيصاً لمجموعة: ${group.name}...`, 'info');
         const aiGeneratedContent = await rewriteAdWithAI(post.ad_title, post.ad_description);
@@ -624,7 +634,7 @@ async function publishToGroup(page, group, post, imagePath) {
         if (fbUrl.trim() !== '') {
             postText += `\n\n${fbUrl.trim()}`;
         }
-        
+
         try {
             await supabase.from('publish_queue').update({ ai_final_text2: postText }).eq('id', post.id);
         } catch(e) {}
@@ -636,7 +646,7 @@ async function publishToGroup(page, group, post, imagePath) {
 
     // ⏳ المرحلة 7: لصق النص ومحاكاة الكتابة البشرية
     await pasteTextWithLines(page, postText);
-    
+
     await page.keyboard.press('Space');
     await smartSleep(1000);
     await page.keyboard.press('Backspace');
@@ -653,7 +663,7 @@ async function publishToGroup(page, group, post, imagePath) {
         await logToDashboard(`⏳ [المرحلة 8] [${ACCOUNT_NAME}] تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية لتفاعل النظام...`, 'info');
         await smartSleep(textWait); 
     }
-    
+
     await smartSleep(randomDelay(10, 18)); 
 
     // ⏳ المرحلة 9: فحص زر النشر والضغط عليه
@@ -699,7 +709,7 @@ async function publishToGroup(page, group, post, imagePath) {
     }
 
     if (!published) throw new Error('فشل العثور على زر النشر، أو أن الزر غير موجود بالصفحة.');
-    
+
     // ⏳ المرحلة 10: مراقبة إغلاق نافذة النشر أو قبول موافقة الأدمن
     await logToDashboard(`⏳ [المرحلة 10] [${ACCOUNT_NAME}] متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة...`, 'info');
     try {
@@ -725,7 +735,7 @@ async function publishToGroup(page, group, post, imagePath) {
 
 async function processOnePost(post) {
     await logToDashboard(`🔥 [${ACCOUNT_NAME}] بدأ معالجة الإعلان: ${post.ad_title}`, 'info');
-    
+
     await updatePostStatus(post.id, 'RUNNING', { started_at: new Date() });
     await updateBotLastActive('RUNNING');
 
@@ -778,19 +788,9 @@ async function processOnePost(post) {
     });
 
     const context = await browser.newContext({
-        viewport: { width: 393, height: 851 },
-        isMobile: true,
-        hasTouch: true,
-        userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+        viewport: { width: 1280, height: 800 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write']
-    });
-
-    await context.route('**/*', (route) => {
-        const resourceType = route.request().resourceType();
-        if (['font', 'media'].includes(resourceType)) {
-            return route.abort();
-        }
-        return route.continue();
     });
 
     if (fs.existsSync(COOKIE_FILE)) {
@@ -798,7 +798,7 @@ async function processOnePost(post) {
             await logToDashboard(`🍪 [${ACCOUNT_NAME}] جاري قراءة وتنسيق الكوكيز للحساب السحابي (${COOKIE_FILE})...`, 'info');
             const cookiesString = fs.readFileSync(COOKIE_FILE, 'utf8');
             let rawCookies = JSON.parse(cookiesString);
-            
+
             const formattedCookies = rawCookies.map(cookie => {
                 const c = { ...cookie };
                 if (typeof c.sameSite === 'string') {
@@ -825,7 +825,7 @@ async function processOnePost(post) {
 
     let successCount = post.success_count || 0;
     let failedCount = post.failed_count || 0;
-    
+
     let failedGroups = [];
     try {
         if (post.error_message && post.error_message.trim() !== '' && post.error_message !== 'null') {
@@ -840,7 +840,7 @@ async function processOnePost(post) {
 
     try {
         while (true) {
-            
+
             // 🛑 1. فحص الحد اليومي (15 مجموعة)
             const limitReached = await checkDailyLimit();
             if (limitReached) {
@@ -896,7 +896,7 @@ async function processOnePost(post) {
             await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) الخاصة بـ البوت الثاني وحذفها من الطابور لضمان التوازي.`, 'success');
 
             const page = await context.newPage();
-            
+
             page.on('dialog', async dialog => {
                 try { await dialog.accept(); } catch(e) {}
             });
@@ -905,10 +905,10 @@ async function processOnePost(post) {
                 // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه
                 await publishToGroup(page, targetGroup, freshPost, imagePath);
                 successCount++;
-                
+
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
                 let finalAiText = latestPost?.ai_final_text2 || latestPost?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
-                
+
                 await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText);
                 await incrementBotCounters();
 
@@ -918,9 +918,9 @@ async function processOnePost(post) {
                     break;
                 }
 
-                const isCheckpoint = err.message.includes('Checkpoint') || err.message.includes('تسجيل الدخول') || err.message.includes('login');
+                const isCheckpoint = err.message.includes('Checkpoint حقيقي');
                 if (isCheckpoint) {
-                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
+                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت حقيقي! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
                     await updateBotLastActive('IDLE');
                     await page.close();
                     break;
@@ -929,10 +929,10 @@ async function processOnePost(post) {
                 failedCount++;
                 failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
-                
+
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
                 let finalAiTextFail = latestPostFail?.ai_final_text2 || latestPostFail?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
-                
+
                 await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail);
 
             } finally {
@@ -953,7 +953,7 @@ async function processOnePost(post) {
                     .from('publish_queue')
                     .update(resetPayload)
                     .eq('id', post.id);
-            
+
                 await logToDashboard(`💾 [${ACCOUNT_NAME}] تم حفظ نقطة التوقف وتحديث الإحصائيات والأخطاء.`, 'info');
             }
 
@@ -1022,7 +1022,7 @@ async function start() {
 
         // 🛑 2. فحص مستمر لحالة (IDLE) في وضع الانتظار
         let currentStatus = await getBotStatus();
-        
+
         if (currentStatus === 'IDLE') {
             await updateBotLastActive('IDLE'); 
             idleLogTimer++;
