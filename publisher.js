@@ -88,18 +88,69 @@ async function incrementBotCounters() {
     } catch(e) {}
 }
 
-// 🟢 إرسال سجل النشر المباشر
-async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null) {
+// 🟢 إرسال أو تحديث سجل النشر المباشر دون تكرار
+async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null, existingLogId = null) {
     try {
-        await supabase.from('bot_publish_logs').insert([{
-            bot_name: BOT_DB_NAME,
-            ad_id: post.id ? post.id.toString() : 'Unknown',
-            ad_title: aiModifiedText || post[BOT_AI_FIELD] || post.ai_final_text || post.ad_title || 'بدون عنوان',
-            group_name: groupName,
-            status: statusMsg,
-            published_at: new Date()
-        }]);
-    } catch(e) {}
+        const cleanGroupName = (groupName || '').trim();
+        const title = aiModifiedText || post[BOT_AI_FIELD] || post.ai_final_text || post.ad_title || 'بدون عنوان';
+        const adIdStr = post.id ? post.id.toString() : 'Unknown';
+
+        if (existingLogId) {
+            await supabase.from('bot_publish_logs')
+                .update({
+                    status: statusMsg,
+                    ad_title: title,
+                    published_at: new Date()
+                })
+                .eq('id', existingLogId);
+            return existingLogId;
+        }
+
+        if (statusMsg === 'PROCESSING') {
+            const { data } = await supabase.from('bot_publish_logs').insert([{
+                bot_name: BOT_DB_NAME,
+                ad_id: adIdStr,
+                ad_title: title,
+                group_name: cleanGroupName,
+                status: statusMsg,
+                published_at: new Date()
+            }]).select('id').single();
+            return data?.id || null;
+        } else {
+            const { data: processingRow } = await supabase.from('bot_publish_logs')
+                .select('id')
+                .eq('bot_name', BOT_DB_NAME)
+                .eq('ad_id', adIdStr)
+                .eq('group_name', cleanGroupName)
+                .eq('status', 'PROCESSING')
+                .order('published_at', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (processingRow?.id) {
+                await supabase.from('bot_publish_logs')
+                    .update({
+                        status: statusMsg,
+                        ad_title: title,
+                        published_at: new Date()
+                    })
+                    .eq('id', processingRow.id);
+                return processingRow.id;
+            } else {
+                const { data } = await supabase.from('bot_publish_logs').insert([{
+                    bot_name: BOT_DB_NAME,
+                    ad_id: adIdStr,
+                    ad_title: title,
+                    group_name: cleanGroupName,
+                    status: statusMsg,
+                    published_at: new Date()
+                }]).select('id').single();
+                return data?.id || null;
+            }
+        }
+    } catch(e) {
+        return null;
+    }
 }
 
 // 🧠 دالة حساب استهلاك الذاكرة (RAM Tracker)
@@ -1212,10 +1263,11 @@ async function processOnePost(post) {
                 } catch(e) {}
             });
 
+            let currentLogId = null;
             try {
                 // 🚀 إرسال حالة (جاري النشر) لتظهر برتقالية في لوحة التحكم
                 let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
-                await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
+                currentLogId = await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
 
                 // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
                 await publishToGroup(page, targetGroup, freshPost, imagePath);
@@ -1224,7 +1276,7 @@ async function processOnePost(post) {
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
                 let finalAiText = latestPost?.[BOT_AI_FIELD] || latestPost?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
                 
-                await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText);
+                await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText, currentLogId);
                 await incrementBotCounters();
 
             } catch (err) {
@@ -1248,7 +1300,7 @@ async function processOnePost(post) {
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
                 let finalAiTextFail = latestPostFail?.[BOT_AI_FIELD] || latestPostFail?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
                 
-                await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail);
+                await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail, currentLogId);
 
             } finally {
                 await page.close();
