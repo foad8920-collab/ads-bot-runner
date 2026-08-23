@@ -293,7 +293,7 @@ async function cleanOldLogs() {
     }
 }
 
-// 🔥 الجلب الذكي للبوت الثاني
+// 🔥 الجلب الذكي للبوت الثاني: يعتمد على عمود المجموعات الرئيسي (groups_json)
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
@@ -326,19 +326,20 @@ async function updatePostStatus(id, status, extra = {}) {
 }
 
 // -------------------------------------------------------------------------
-// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة
+// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة مع دعم واجهات البيع والشراء والـ Virtual DOM
 // -------------------------------------------------------------------------
 
 async function openPostBox(page) {
     // ⏳ المرحلة 3: التبديل لتبويب مناقشة إذا وجد
     await logToDashboard(`⏳ [المرحلة 3] [${ACCOUNT_NAME}] التهيؤ لفحص التبويبات والتبديل إلى (مناقشة)...`, 'info');
-    await smartSleep(randomDelay(10, 18));
+    await smartSleep(randomDelay(8, 14));
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
         'div[role="tab"]:has-text("Discussion")',
         'a[role="tab"]:has-text("مناقشة")',
         'a[role="tab"]:has-text("Discussion")',
+        'a[href*="/discussion"]',
         'text="عرض المناقشات"',
         'text="مناقشة"',
         'text="Discussion"'
@@ -348,37 +349,42 @@ async function openPostBox(page) {
         try {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
-                await tabBtn.click({ timeout: 8000, force: true });
+                await tabBtn.click({ timeout: 6000, force: true });
                 await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)...`, 'info');
-                await smartSleep(randomDelay(10, 18));
+                await smartSleep(randomDelay(8, 15));
                 break;
             }
         } catch (e) {}
     }
 
-    // 🌟 إغلاق أي نافذة شروط معلقة
+    // 🌟 إغلاق أي نوافذ تحذيرية أو إشعارات شروط مسبقة
     const dismissBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree'];
     for (const dBtn of dismissBtns) {
         try {
             const btn = page.locator(dBtn).first();
             if (await btn.count() > 0 && await btn.isVisible()) {
-                await btn.click({ timeout: 4000, force: true });
-                await smartSleep(2000);
+                await btn.click({ timeout: 3000, force: true });
+                await smartSleep(1500);
             }
         } catch(e) {}
     }
 
-    // 🌟 تمرير خفيف لأسفل لإظهار مربع النشر
+    // 🌟 تمرير متدرج (Smooth Scrolling) لتفعيل عناصر الصفحة في مجموعات التجارة
     try {
-        await page.evaluate(() => window.scrollBy(0, 300));
-        await smartSleep(2000);
+        await page.evaluate(async () => {
+            window.scrollBy({ top: 450, behavior: 'smooth' });
+            await new Promise(r => setTimeout(r, 1000));
+            window.scrollBy({ top: -150, behavior: 'smooth' });
+        });
+        await smartSleep(3000);
     } catch(e) {}
 
-    // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور
+    // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور (عادي + تجاري)
     await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] البحث عن مربع النشر وفتحه...`, 'info');
-    await smartSleep(randomDelay(10, 18));
+    await smartSleep(randomDelay(8, 15));
 
     const selectors = [
+        // 1. محددات النشر العادي
         'span:has-text("اكتب شيئًا...")',
         'span:has-text("Write something...")',
         'text="اكتب شيئًا..."',
@@ -396,35 +402,36 @@ async function openPostBox(page) {
         'span:has-text("اكتب شيئاً...")',
         'text="اكتب شيئاً..."',
         'div[role="button"]:has-text("اكتب شيئاً...")',
-        'span:has-text("اكتب")',
-        'span:has-text("Write")',
-        'div[role="button"]:has-text("اكتب")',
-        'div[role="button"]:has-text("Write")',
-        'div[role="button"]:has-text("بم تفكر")',
-        'div[role="button"]:has-text("تفكر")',
-        'text=/اكتب/i',
-        'text=/تفكر/i',
-        'text=/بم تفكر/i',
+        
+        // 2. محددات مجموعات البيع والشراء الكبرى
         'text="بدء مناقشة"',
         'text="Start Discussion"',
         'div[role="button"]:has-text("بدء مناقشة")',
-        'div[role="button"]:has-text("Start Discussion")'
+        'div[role="button"]:has-text("Start Discussion")',
+        'text="عرض عنصر للبيع"',
+        'text="بيع شيء"',
+        'text="Sell Something"',
+        'div[role="button"]:has-text("بيع شيء")',
+        'div[role="button"]:has-text("Sell Something")',
+        'div[aria-label*="اكتب شيئاً"]',
+        'div[aria-label*="Write something"]'
     ];
 
     for (const selector of selectors) {
         try {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
+                await element.scrollIntoViewIfNeeded({ timeout: 5000 });
                 await element.click({ timeout: 10000, force: true });
                 await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
-                await smartSleep(randomDelay(15, 25));
+                await smartSleep(randomDelay(12, 20));
 
                 for (const cBtn of dismissBtns) {
                     try {
                         const btn = page.locator(cBtn).first();
                         if (await btn.count() > 0 && await btn.isVisible()) {
                             await btn.click({ timeout: 4000, force: true });
-                            await smartSleep(randomDelay(2, 5));
+                            await smartSleep(2000);
                         }
                     } catch(e){}
                 }
@@ -435,9 +442,10 @@ async function openPostBox(page) {
         } catch (e) {}
     }
 
+    // 3. المحاولة عبر البحث الشامل في عناصر الـ DOM مباشرة
     try {
         const openedByJS = await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('div[role="button"], span, div, a'));
+            const elements = Array.from(document.querySelectorAll('div[role="button"], span, div, a, button'));
             const target = elements.find(el => {
                 const txt = (el.innerText || el.textContent || '').trim();
                 return (
@@ -446,7 +454,9 @@ async function openPostBox(page) {
                     txt.includes('بم تفكر') || 
                     txt.includes("What's on your mind") || 
                     txt.includes('إنشاء منشور') ||
-                    txt.includes('بدء مناقشة')
+                    txt.includes('بدء مناقشة') ||
+                    txt.includes('Start Discussion') ||
+                    txt.includes('بيع شيء')
                 );
             });
             if (target) {
@@ -459,7 +469,7 @@ async function openPostBox(page) {
 
         if (openedByJS) {
             await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بواسطة JS Event Trigger`, 'success');
-            await smartSleep(randomDelay(15, 25));
+            await smartSleep(randomDelay(12, 20));
             return true;
         }
     } catch (e) {}
@@ -470,7 +480,7 @@ async function openPostBox(page) {
 async function pasteTextWithLines(page, postText) {
     // ⏳ المرحلة 7: التركيز على الحقل ولصق النص بمحاكاة بشرية كاملة
     await logToDashboard(`⏳ [المرحلة 7] [${ACCOUNT_NAME}] جاري البحث عن مربع الكتابة والتركيز عليه...`, 'info');
-    await smartSleep(randomDelay(10, 18));
+    await smartSleep(randomDelay(8, 14));
 
     const targetSelectors = [
         'div[role="dialog"] div[role="textbox"]',
@@ -556,7 +566,7 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
     await logToDashboard(`📢 [المرحلة 1] [${ACCOUNT_NAME}] فتح المجموعة بوضع سطح المكتب: ${group.name} | الرابط: ${targetUrl}`, 'info');
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    const loadWait = randomDelay(25, 40);
+    const loadWait = randomDelay(20, 35);
     await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر الثقيلة...`, 'info');
     await smartSleep(loadWait); 
 
@@ -587,7 +597,7 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
     const opened = await openPostBox(page);
     if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
 
-    await smartSleep(randomDelay(8, 15)); 
+    await smartSleep(randomDelay(8, 14)); 
 
     // ⏳ المرحلة 6: رفع الميديا والانتظار الموسع لاستقرار المعاينة (إلزامية في حال وجود صورة/فيديو)
     if (hasMediaRequired) {
@@ -650,12 +660,12 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
             await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] تأكيد إضافي لوجود المرفق...`, 'info');
         }
 
-        const extraWait = randomDelay(15, 25);
+        const extraWait = randomDelay(12, 20);
         await logToDashboard(`⏳ [المرحلة 6] [${ACCOUNT_NAME}] ننتظر ${Math.round(extraWait/1000)} ثانية إضافية لتثبيت المعاينة...`, 'info');
         await smartSleep(extraWait); 
     }
 
-    await smartSleep(randomDelay(8, 15)); 
+    await smartSleep(randomDelay(8, 14)); 
 
     // ⏳ المرحلة 5: تجهيز أو صياغة محتوى الذكاء الاصطناعي للبوت الثاني
     let postText = post.ai_final_text2 || post.ai_final_text || '';
@@ -690,16 +700,16 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
     // ⏳ المرحلة 8: انتظار تفاعل النظام مع النص والروابط وتوليد بطاقة المعاينة
     let fbUrlCheck = post.facebook_url || '';
     if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
-        const linkWait = randomDelay(35, 50);
+        const linkWait = randomDelay(30, 45);
         await logToDashboard(`⏳ [المرحلة 8] [${ACCOUNT_NAME}] تم إدراج رابط، ننتظر ${Math.round(linkWait/1000)} ثانية ليتفاعل النظام وتظهر معاينة الرابط بالكامل...`, 'info');
         await smartSleep(linkWait);
     } else {
-        const textWait = randomDelay(20, 30);
+        const textWait = randomDelay(18, 26);
         await logToDashboard(`⏳ [المرحلة 8] [${ACCOUNT_NAME}] تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية لتفاعل النظام...`, 'info');
         await smartSleep(textWait); 
     }
 
-    await smartSleep(randomDelay(8, 15)); 
+    await smartSleep(randomDelay(8, 14)); 
 
     // ⏳ المرحلة 9: فحص دقيق وشامل لزر النشر ودعم زر (التالي / Next) لمجموعات البيع
     await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] بدء فحص زر النشر والنقر عليه...`, 'info');
@@ -728,7 +738,7 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
                 let retries = 0;
                 while (isDisabled === 'true' && retries < 10) { 
                     await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، ننتظر فيسبوك بهدوء... (${retries + 1}/10)`, 'info');
-                    await smartSleep(5000);
+                    await smartSleep(4000);
                     isDisabled = await btn.getAttribute('aria-disabled');
                     retries++;
                 }
@@ -790,7 +800,7 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
         await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] اختفت نافذة النشر بنجاح! المنشور الآن في المجموعة.`, 'success');
     } catch (e) {
         const isPendingAdmin = await page.evaluate(() => {
-            const bodyText = document.body ? document.body.innerText : '';
+            const bodyText = document.body.innerText || '';
             return bodyText.includes('قيد المراجعة') || bodyText.includes('مسؤول') || bodyText.includes('pending') || bodyText.includes('admin');
         });
 
@@ -890,7 +900,6 @@ async function processOnePost(post) {
             const cookiesString = fs.readFileSync(COOKIE_FILE, 'utf8');
             let rawCookies = JSON.parse(cookiesString);
 
-            // 🌟 معالجة نظيفة بدون تدمير الدومين الأساسي للحساب
             const formattedCookies = rawCookies.map(cookie => {
                 const c = { ...cookie };
                 if (typeof c.sameSite === 'string') {
