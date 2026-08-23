@@ -12,7 +12,7 @@ const { createClient } = require('@supabase/supabase-js');
 const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '2').trim();
 const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) 
     ? `./cookies${ACCOUNT_NUM}.json` 
-    : (fs.existsSync('./cookies2.json') ? './cookies2.json' : './cookies.json');
+    : (fs.existsSync('./cookies2.json') ? './cookies1.json' : './cookies.json');
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 const BOT_DB_NAME = `bot${ACCOUNT_NUM}`;
 const BOT_GROUP_FIELD = `bot${ACCOUNT_NUM}_group`;
@@ -673,7 +673,7 @@ async function publishToGroup(page, group, post, imagePath) {
         setStage(1, `فتح صفحة المجموعة بوضع الجوال (${group.name}) واستقرار العناصر`);
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
         
-        const loadWait = randomDelay(23, 35);
+        const loadWait = randomDelay(22, 34);
         await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر...`, 'info');
         await smartSleep(loadWait); 
 
@@ -685,7 +685,7 @@ async function publishToGroup(page, group, post, imagePath) {
         const opened = await openPostBox(page);
         if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
 
-        await smartSleep(randomDelay(7, 13)); 
+        await smartSleep(randomDelay(7, 12)); 
 
         // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي
         setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
