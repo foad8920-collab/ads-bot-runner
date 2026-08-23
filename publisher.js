@@ -438,9 +438,32 @@ async function openPostBox(page) {
         } catch (e) {}
     }
 
+    // 👥 فحص ونقر زر الانضمام للمجموعة إذا لم يكن الحساب منضماً بعد
+    try {
+        const joinBtns = [
+            'div[role="button"]:has-text("الانضمام إلى المجموعة")',
+            'div[role="button"]:has-text("الانضمام")',
+            'div[role="button"]:has-text("انضمام")',
+            'div[role="button"]:has-text("Join group")',
+            'div[role="button"]:has-text("Join Group")',
+            'div[role="button"]:has-text("Join")',
+            'text="الانضمام إلى المجموعة"',
+            'text="Join group"'
+        ];
+        for (const jSel of joinBtns) {
+            const jBtn = page.locator(jSel).first();
+            if (await jBtn.count() > 0 && await jBtn.isVisible()) {
+                await jBtn.click({ timeout: 5000, force: true });
+                await logToDashboard(`👥 [المرحلة 4] [${ACCOUNT_NAME}] تم طلب الانضمام للمجموعة أولاً...`, 'info');
+                await smartSleep(randomDelay(5, 10));
+                break;
+            }
+        }
+    } catch(e) {}
+
     // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور
     setStage(4, 'البحث عن مربع النشر وفتحه');
-    await smartSleep(randomDelay(12, 20));
+    await smartSleep(randomDelay(8, 14));
 
     const selectors = [
         'div[data-sigil="m-feed-composer-opener"]',
@@ -453,12 +476,26 @@ async function openPostBox(page) {
         'text="What\'s on your mind?"',
         'text="إنشاء منشور عام..."',
         'text="Create a public post..."',
+        'text="ماذا تبيع؟"',
+        'text="What are you selling?"',
+        'text="عرض عنصر للبيع"',
+        'text="Sell something"',
+        'text="عنصر للبيع"',
+        'text="Item for sale"',
+        'text="بيع شيء ما"',
         'div[role="button"]:has-text("اكتب شيئًا...")',
         'div[role="button"]:has-text("Write something...")',
         'div[role="button"]:has-text("بم تفكر؟")',
         'div[role="button"]:has-text("What\'s on your mind?")',
         'div[role="button"]:has-text("إنشاء منشور عام...")',
         'div[role="button"]:has-text("Create a public post...")',
+        'div[role="button"]:has-text("ماذا تبيع")',
+        'div[role="button"]:has-text("عنصر للبيع")',
+        'div[role="button"]:has-text("بيع")',
+        'div[role="button"]:has-text("Sell")',
+        'div[role="button"]:has-text("بدء مناقشة")',
+        'div[role="button"]:has-text("مناقشة")',
+        'div[role="button"]:has-text("Discussion")',
         'div[aria-label*="Create a public post"]',
         'div[aria-label*="إنشاء منشور"]',
         'div[aria-label*="Write something"]',
@@ -472,8 +509,6 @@ async function openPostBox(page) {
         'span:has-text("Write")',
         'div[role="button"]:has-text("اكتب")',
         'div[role="button"]:has-text("Write")',
-        'div[role="button"]:has-text("بم تفكر")',
-        'div[role="button"]:has-text("تفكر")',
         'div[role="button"]:has-text("Photo")',
         'div[role="button"]:has-text("Photos")',
         'div[role="button"]:has-text("صورة")',
@@ -486,7 +521,8 @@ async function openPostBox(page) {
         'text=/تفكر/i',
         'text=/بم تفكر/i',
         'a[href*="/composer/"]',
-        'a[href*="multi_step_composer"]'
+        'a[href*="multi_step_composer"]',
+        'a[href*="for_sale"]'
     ];
 
     for (const selector of selectors) {
@@ -516,7 +552,9 @@ async function openPostBox(page) {
 
     const discussionBtns = [
         'text=بدء مناقشة', 'text=Start Discussion', 'text=مناقشة', 'text=Discussion',
-        'a[href*="/discussion"]', 'div[role="button"]:has-text("مناقشة")'
+        'a[href*="/discussion"]', 'div[role="button"]:has-text("مناقشة")',
+        'div[role="button"]:has-text("عنصر للبيع")', 'div[role="button"]:has-text("Sell")',
+        'text=عرض عنصر للبيع', 'text=Sell something'
     ];
     for (const dSel of discussionBtns) {
         try {
@@ -533,20 +571,25 @@ async function openPostBox(page) {
         const openedByJS = await page.evaluate(() => {
             const elements = Array.from(document.querySelectorAll('div[role="button"], span, div, a, [data-sigil*="composer"]'));
             const target = elements.find(el => {
-                const txt = (el.innerText || el.textContent || '').trim();
-                const aria = (el.getAttribute('aria-label') || '').trim();
+                const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
                 return (
-                    txt.includes('اكتب شيئًا') || 
-                    txt.includes('اكتب شيئاً') || 
-                    txt.includes('Write something') || 
+                    txt.includes('اكتب شيئ') || 
+                    txt.includes('write something') || 
                     txt.includes('بم تفكر') || 
-                    txt.includes("What's on your mind") || 
+                    txt.includes("what's on your mind") || 
                     txt.includes('إنشاء منشور') ||
-                    txt.includes('Create a public post') ||
+                    txt.includes('create a public post') ||
+                    txt.includes('ماذا تبيع') ||
+                    txt.includes('عنصر للبيع') ||
+                    txt.includes('sell something') ||
+                    txt.includes('بدء مناقشة') ||
+                    txt.includes('مناقشة') ||
                     aria.includes('اكتب') ||
-                    aria.includes('Write') ||
-                    aria.includes('Create a public post') ||
-                    aria.includes('إنشاء منشور')
+                    aria.includes('write') ||
+                    aria.includes('إنشاء منشور') ||
+                    aria.includes('create a post') ||
+                    aria.includes('create a public post')
                 );
             });
             if (target) {
