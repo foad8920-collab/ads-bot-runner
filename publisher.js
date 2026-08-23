@@ -25,7 +25,7 @@ const { createClient } = require('@supabase/supabase-js');
 const ACCOUNT_NUM = process.env.ACCOUNT_NUMBER || '2';
 const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) ? `./cookies${ACCOUNT_NUM}.json` : './cookies2.json';
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
-const BOT_DB_NAME = `bot${ACCOUNT_NUM}`; // 🟢 استخراج اسم البوت (bot2) لمطابقة جداول اللوحة المركزية
+const BOT_DB_NAME = `bot${ACCOUNT_NUM}`;
 
 // -------------------------------------------------------------------------
 // 🔗 دوال الربط بلوحة التحكم المركزية 🟢 
@@ -90,7 +90,7 @@ async function incrementBotCounters() {
     } catch(e) {}
 }
 
-// 🟢 إرسال سجل النشر المباشر مع اعتماد النص المعدل بواسطة جوجل AI حصراً في حقل ad_title
+// 🟢 إرسال سجل النشر المباشر
 async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null) {
     try {
         await supabase.from('bot_publish_logs').insert([{
@@ -103,7 +103,6 @@ async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null
         }]);
     } catch(e) {}
 }
-// -------------------------------------------------------------------------
 
 // 🧠 دالة حساب استهلاك الذاكرة (RAM Tracker)
 function getMemoryLog() {
@@ -294,7 +293,7 @@ async function cleanOldLogs() {
     }
 }
 
-// 🔥 الجلب الذكي للبوت الثاني: يعتمد على عمود المجموعات الرئيسي (groups_json)
+// 🔥 الجلب الذكي للبوت الثاني
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
@@ -327,13 +326,13 @@ async function updatePostStatus(id, status, extra = {}) {
 }
 
 // -------------------------------------------------------------------------
-// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة مع توقيتات الأمان الموسعة
+// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة
 // -------------------------------------------------------------------------
 
 async function openPostBox(page) {
-    // ⏳ المرحلة 3: التبديل لتبويب مناقشة إذا وجد لتخطي واجهة البيع والشراء
+    // ⏳ المرحلة 3: التبديل لتبويب مناقشة إذا وجد
     await logToDashboard(`⏳ [المرحلة 3] [${ACCOUNT_NAME}] التهيؤ لفحص التبويبات والتبديل إلى (مناقشة)...`, 'info');
-    await smartSleep(randomDelay(15, 25));
+    await smartSleep(randomDelay(10, 18));
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
@@ -350,16 +349,34 @@ async function openPostBox(page) {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
                 await tabBtn.click({ timeout: 8000, force: true });
-                await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)، ننتظر لاستقرار الواجهة...`, 'info');
-                await smartSleep(randomDelay(15, 25));
+                await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)...`, 'info');
+                await smartSleep(randomDelay(10, 18));
                 break;
             }
         } catch (e) {}
     }
 
+    // 🌟 إغلاق أي نافذة شروط معلقة
+    const dismissBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree'];
+    for (const dBtn of dismissBtns) {
+        try {
+            const btn = page.locator(dBtn).first();
+            if (await btn.count() > 0 && await btn.isVisible()) {
+                await btn.click({ timeout: 4000, force: true });
+                await smartSleep(2000);
+            }
+        } catch(e) {}
+    }
+
+    // 🌟 تمرير خفيف لأسفل لإظهار مربع النشر
+    try {
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await smartSleep(2000);
+    } catch(e) {}
+
     // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور
     await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] البحث عن مربع النشر وفتحه...`, 'info');
-    await smartSleep(randomDelay(12, 20));
+    await smartSleep(randomDelay(10, 18));
 
     const selectors = [
         'span:has-text("اكتب شيئًا...")',
@@ -387,7 +404,11 @@ async function openPostBox(page) {
         'div[role="button"]:has-text("تفكر")',
         'text=/اكتب/i',
         'text=/تفكر/i',
-        'text=/بم تفكر/i'
+        'text=/بم تفكر/i',
+        'text="بدء مناقشة"',
+        'text="Start Discussion"',
+        'div[role="button"]:has-text("بدء مناقشة")',
+        'div[role="button"]:has-text("Start Discussion")'
     ];
 
     for (const selector of selectors) {
@@ -398,33 +419,17 @@ async function openPostBox(page) {
                 await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
                 await smartSleep(randomDelay(15, 25));
 
-                const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة'];
-                for (const cBtn of confirmBtns) {
+                for (const cBtn of dismissBtns) {
                     try {
                         const btn = page.locator(cBtn).first();
                         if (await btn.count() > 0 && await btn.isVisible()) {
-                            await btn.click({ timeout: 5000, force: true });
-                            await smartSleep(randomDelay(3, 6));
+                            await btn.click({ timeout: 4000, force: true });
+                            await smartSleep(randomDelay(2, 5));
                         }
                     } catch(e){}
                 }
 
                 await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور عبر المحدد (${selector}) بنجاح`, 'success');
-                return true;
-            }
-        } catch (e) {}
-    }
-
-    const discussionBtns = [
-        'text=بدء مناقشة', 'text=Start Discussion', 'text=مناقشة', 'text=Discussion',
-        'a[href*="/discussion"]', 'div[role="button"]:has-text("مناقشة")'
-    ];
-    for (const dSel of discussionBtns) {
-        try {
-            const dBtn = page.locator(dSel).first();
-            if (await dBtn.count() > 0 && await dBtn.isVisible()) {
-                await dBtn.click({ timeout: 8000, force: true });
-                await smartSleep(randomDelay(12, 20));
                 return true;
             }
         } catch (e) {}
@@ -440,10 +445,12 @@ async function openPostBox(page) {
                     txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
                     txt.includes("What's on your mind") || 
-                    txt.includes('إنشاء منشور')
+                    txt.includes('إنشاء منشور') ||
+                    txt.includes('بدء مناقشة')
                 );
             });
             if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 target.click();
                 return true;
             }
@@ -694,29 +701,35 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
 
     await smartSleep(randomDelay(8, 15)); 
 
-    // ⏳ المرحلة 9: فحص زر النشر والضغط عليه
+    // ⏳ المرحلة 9: فحص دقيق وشامل لزر النشر ودعم زر (التالي / Next) لمجموعات البيع
     await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] بدء فحص زر النشر والنقر عليه...`, 'info');
-    const publishButtons = [
+    
+    const postBtnSelectors = [
         'div[role="dialog"] div[role="button"][aria-label="نشر"]',
         'div[role="dialog"] div[role="button"][aria-label="Post"]',
         'div[role="dialog"] div[role="button"]:has-text("نشر")',
         'div[role="dialog"] div[role="button"]:has-text("Post")',
         'div[aria-label="نشر"]',
         'div[aria-label="Post"]',
-        'text=نشر', 'text=Post', 'text=Publish'
+        'div[role="dialog"] div[role="button"]:has-text("التالي")',
+        'div[role="dialog"] div[role="button"]:has-text("Next")',
+        'button:has-text("نشر")',
+        'button:has-text("Post")'
     ];
 
-    let published = false;
-    for (const btn of publishButtons) {
+    let clicked = false;
+
+    // 1. محاولة النقر عبر محددات Playwright
+    for (const selector of postBtnSelectors) {
         try {
-            const button = page.locator(btn).first();
-            if (await button.count() > 0 && await button.isVisible()) {
-                let isDisabled = await button.getAttribute('aria-disabled');
+            const btn = page.locator(selector).first();
+            if (await btn.count() > 0 && await btn.isVisible()) {
+                let isDisabled = await btn.getAttribute('aria-disabled');
                 let retries = 0;
                 while (isDisabled === 'true' && retries < 10) { 
-                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، ننتظر فيسبوك بهدوء... (محاولة ${retries + 1}/10)`, 'info');
-                    await smartSleep(6000);
-                    isDisabled = await button.getAttribute('aria-disabled');
+                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، ننتظر فيسبوك بهدوء... (${retries + 1}/10)`, 'info');
+                    await smartSleep(5000);
+                    isDisabled = await btn.getAttribute('aria-disabled');
                     retries++;
                 }
 
@@ -724,19 +737,51 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
                     throw new Error('زر النشر استمر معطلاً (رمادي) لفترة طويلة.');
                 }
 
-                await button.click({ timeout: 15000 });
-                published = true;
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر بطريقة شرعية وطبيعية!`, 'success');
+                await btn.click({ timeout: 15000, force: true });
+                clicked = true;
+                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر (${selector}) بنجاح!`, 'success');
+                await smartSleep(4000);
                 break;
             }
         } catch (e) {
-            if (e.message.includes('زر النشر استمر معطلاً')) {
-                throw e; 
-            }
+            if (e.message.includes('استمر معطلاً')) throw e;
         }
     }
 
-    if (!published) throw new Error('فشل العثور على زر النشر، أو أن الزر غير موجود بالصفحة.');
+    // 2. إذا لم يُنقر، فحص عميق في شجرة DOM Native Click
+    if (!clicked) {
+        clicked = await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('div[role="button"], button'));
+            const target = buttons.find(b => {
+                const txt = (b.innerText || b.textContent || b.getAttribute('aria-label') || '').trim();
+                return txt === 'نشر' || txt === 'Post' || txt === 'التالي' || txt === 'Next';
+            });
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                target.click();
+                return true;
+            }
+            return false;
+        });
+
+        if (clicked) {
+            await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر الـ DOM Click!`, 'success');
+            await smartSleep(4000);
+        }
+    }
+
+    // 3. دعم خطوة تأكيد (التالي/Next) ثم (نشر) لمجموعات التجارة والبيع
+    try {
+        const nextConfirmBtn = page.locator('div[role="dialog"] div[role="button"]:has-text("نشر"), div[role="dialog"] div[role="button"]:has-text("Post")').first();
+        if (await nextConfirmBtn.count() > 0 && await nextConfirmBtn.isVisible()) {
+            await nextConfirmBtn.click({ timeout: 8000, force: true });
+            await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر النهائي بعد خطوة (التالي)!`, 'success');
+        }
+    } catch(e) {}
+
+    if (!clicked) {
+        throw new Error('فشل العثور على زر النشر أو النقر عليه داخل نافذة فيسبوك!');
+    }
 
     // ⏳ المرحلة 10: مراقبة إغلاق نافذة النشر أو قبول موافقة الأدمن
     await logToDashboard(`⏳ [المرحلة 10] [${ACCOUNT_NAME}] متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة...`, 'info');
@@ -845,6 +890,7 @@ async function processOnePost(post) {
             const cookiesString = fs.readFileSync(COOKIE_FILE, 'utf8');
             let rawCookies = JSON.parse(cookiesString);
 
+            // 🌟 معالجة نظيفة بدون تدمير الدومين الأساسي للحساب
             const formattedCookies = rawCookies.map(cookie => {
                 const c = { ...cookie };
                 if (typeof c.sameSite === 'string') {
