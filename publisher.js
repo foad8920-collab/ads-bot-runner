@@ -293,7 +293,7 @@ async function cleanOldLogs() {
     }
 }
 
-// 🔥 الجلب الذكي للبوت الثاني: يعتمد على عمود المجموعات الرئيسي (groups_json)
+// 🔥 الجلب الذكي للبوت الثاني
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
@@ -326,7 +326,7 @@ async function updatePostStatus(id, status, extra = {}) {
 }
 
 // -------------------------------------------------------------------------
-// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة مع دعم واجهات البيع والشراء والـ Virtual DOM
+// 🚀 تنفيذ المراحل الـ 10 للنشر بالمجموعة (بنية البحث الشامل 360 درجة)
 // -------------------------------------------------------------------------
 
 async function openPostBox(page) {
@@ -342,7 +342,9 @@ async function openPostBox(page) {
         'a[href*="/discussion"]',
         'text="عرض المناقشات"',
         'text="مناقشة"',
-        'text="Discussion"'
+        'text="Discussion"',
+        'a:has-text("المناقشات")',
+        'a:has-text("المنشورات")'
     ];
 
     for (const tabSel of discussionTabs) {
@@ -379,8 +381,8 @@ async function openPostBox(page) {
         await smartSleep(3000);
     } catch(e) {}
 
-    // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور (عادي + تجاري)
-    await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] البحث عن مربع النشر وفتحه...`, 'info');
+    // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور بعدة طرق شاملة
+    await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] بدء البحث الشامل عن محرر النشر وفتحه...`, 'info');
     await smartSleep(randomDelay(8, 15));
 
     const selectors = [
@@ -402,7 +404,16 @@ async function openPostBox(page) {
         'span:has-text("اكتب شيئاً...")',
         'text="اكتب شيئاً..."',
         'div[role="button"]:has-text("اكتب شيئاً...")',
-        
+        'span:has-text("اكتب")',
+        'span:has-text("Write")',
+        'div[role="button"]:has-text("اكتب")',
+        'div[role="button"]:has-text("Write")',
+        'div[role="button"]:has-text("بم تفكر")',
+        'div[role="button"]:has-text("تفكر")',
+        'text=/اكتب/i',
+        'text=/تفكر/i',
+        'text=/بم تفكر/i',
+
         // 2. محددات مجموعات البيع والشراء الكبرى
         'text="بدء مناقشة"',
         'text="Start Discussion"',
@@ -414,16 +425,19 @@ async function openPostBox(page) {
         'div[role="button"]:has-text("بيع شيء")',
         'div[role="button"]:has-text("Sell Something")',
         'div[aria-label*="اكتب شيئاً"]',
-        'div[aria-label*="Write something"]'
+        'div[aria-label*="Write something"]',
+        'div[aria-label*="بم تفكر"]',
+        'div[aria-label*="What\'s on your mind"]'
     ];
 
+    // الطريقة 1: الفحص المباشر عبر Selectors
     for (const selector of selectors) {
         try {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
                 await element.scrollIntoViewIfNeeded({ timeout: 5000 });
                 await element.click({ timeout: 10000, force: true });
-                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
+                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور عبر (${selector})، ننتظر لتفتح بهدوء...`, 'info');
                 await smartSleep(randomDelay(12, 20));
 
                 for (const cBtn of dismissBtns) {
@@ -436,18 +450,18 @@ async function openPostBox(page) {
                     } catch(e){}
                 }
 
-                await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور عبر المحدد (${selector}) بنجاح`, 'success');
+                await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بنجاح`, 'success');
                 return true;
             }
         } catch (e) {}
     }
 
-    // 3. المحاولة عبر البحث الشامل في عناصر الـ DOM مباشرة
+    // الطريقة 2: البحث العميق في شجرة الـ DOM مع تفعيل الأحداث المباشرة
     try {
         const openedByJS = await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('div[role="button"], span, div, a, button'));
+            const elements = Array.from(document.querySelectorAll('div[role="button"], span, div, a, button, input'));
             const target = elements.find(el => {
-                const txt = (el.innerText || el.textContent || '').trim();
+                const txt = (el.innerText || el.textContent || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '').trim();
                 return (
                     txt.includes('اكتب شيئًا') || 
                     txt.includes('Write something') || 
@@ -456,12 +470,14 @@ async function openPostBox(page) {
                     txt.includes('إنشاء منشور') ||
                     txt.includes('بدء مناقشة') ||
                     txt.includes('Start Discussion') ||
-                    txt.includes('بيع شيء')
+                    txt.includes('بيع شيء') ||
+                    txt.includes('Sell Something')
                 );
             });
             if (target) {
                 target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 target.click();
+                target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                 return true;
             }
             return false;
@@ -469,6 +485,17 @@ async function openPostBox(page) {
 
         if (openedByJS) {
             await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بواسطة JS Event Trigger`, 'success');
+            await smartSleep(randomDelay(12, 20));
+            return true;
+        }
+    } catch (e) {}
+
+    // الطريقة 3: استكشاف أزرار الصور/الفيديو المباشرة لفتح المحرر
+    try {
+        const photoBtn = page.locator('div[aria-label="صورة/فيديو"], div[aria-label="Photo/video"], div:has-text("صورة/فيديو"), div:has-text("Photo/video")').first();
+        if (await photoBtn.count() > 0 && await photoBtn.isVisible()) {
+            await photoBtn.click({ timeout: 8000, force: true });
+            await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بالنقر على زر (صورة/فيديو) المباشر`, 'success');
             await smartSleep(randomDelay(12, 20));
             return true;
         }
@@ -711,8 +738,8 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
 
     await smartSleep(randomDelay(8, 14)); 
 
-    // ⏳ المرحلة 9: فحص دقيق وشامل لزر النشر ودعم زر (التالي / Next) لمجموعات البيع
-    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] بدء فحص زر النشر والنقر عليه...`, 'info');
+    // ⏳ المرحلة 9: فحص زر النشر مع التنشيط التلقائي بالـ Space في حال كان الزر رمادي معطلاً
+    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] بدء فحص زر النشر وتنشيطه إن كان معطلاً...`, 'info');
     
     const postBtnSelectors = [
         'div[role="dialog"] div[role="button"][aria-label="نشر"]',
@@ -729,18 +756,45 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
 
     let clicked = false;
 
-    // 1. محاولة النقر عبر محددات Playwright
+    // 1. محاولة النقر عبر محددات Playwright مع التنشيط بالسبيس
     for (const selector of postBtnSelectors) {
         try {
             const btn = page.locator(selector).first();
             if (await btn.count() > 0 && await btn.isVisible()) {
                 let isDisabled = await btn.getAttribute('aria-disabled');
                 let retries = 0;
-                while (isDisabled === 'true' && retries < 10) { 
-                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، ننتظر فيسبوك بهدوء... (${retries + 1}/10)`, 'info');
-                    await smartSleep(4000);
+
+                while (isDisabled === 'true' && retries < 8) { 
+                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، جاري إرسال Space لتنشيط المحرر... (${retries + 1}/8)`, 'info');
+
+                    // 🌟 التركيز على مربع النص وإدخال مسافة لتنشيط زر النشر فوراً
+                    try {
+                        const activeTextbox = page.locator('div[role="dialog"] div[role="textbox"], div[role="dialog"] [contenteditable="true"]').first();
+                        if (await activeTextbox.count() > 0) {
+                            await activeTextbox.focus();
+                            await page.keyboard.press('Space');
+                            await smartSleep(600);
+                            await page.keyboard.press('Backspace');
+                        }
+                    } catch(e) {}
+
+                    await smartSleep(3500);
                     isDisabled = await btn.getAttribute('aria-disabled');
                     retries++;
+                }
+
+                if (isDisabled === 'true') {
+                    // محاولة تحفيز إضافية عبر جافاسكريبت المباشر للـ DOM
+                    await page.evaluate(() => {
+                        const tb = document.querySelector('div[role="dialog"] div[contenteditable="true"], div[role="dialog"] div[role="textbox"]');
+                        if (tb) {
+                            tb.focus();
+                            tb.dispatchEvent(new Event('input', { bubbles: true }));
+                            tb.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    });
+                    await smartSleep(2000);
+                    isDisabled = await btn.getAttribute('aria-disabled');
                 }
 
                 if (isDisabled === 'true') {
@@ -800,7 +854,7 @@ async function publishToGroup(page, group, post, imagePath, hasMediaRequired) {
         await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] اختفت نافذة النشر بنجاح! المنشور الآن في المجموعة.`, 'success');
     } catch (e) {
         const isPendingAdmin = await page.evaluate(() => {
-            const bodyText = document.body.innerText || '';
+            const bodyText = document.body ? document.body.innerText : '';
             return bodyText.includes('قيد المراجعة') || bodyText.includes('مسؤول') || bodyText.includes('pending') || bodyText.includes('admin');
         });
 
@@ -1097,7 +1151,7 @@ async function processOnePost(post) {
 }
 
 async function start() {
-    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثاني بنظام المراحل الـ 10...`, 'info');
+    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثاني بنظام المراحل الـ 10 الشامل...`, 'info');
 
     await resetStuckPosts();
     await cleanOldLogs();
