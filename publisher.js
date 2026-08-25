@@ -420,6 +420,119 @@ function stopStageWatchdog() {
     currentStageInfo = null;
 }
 
+// 🛡️ فحص صحة وأمان جلسة فيسبوك الشامل (READ-ONLY Session Health Check)
+async function checkFacebookSessionHealth(page) {
+    try {
+        await logToDashboard(`🛡️ [${ACCOUNT_NAME}] جاري فحص صحة وأمان جلسة Facebook...`, 'info');
+        
+        // الانتقال لصفحة رئيسية آمنة للتحقق من استقرار الجلسة
+        await page.goto('https://m.facebook.com/home.php', { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await smartSleep(randomDelay(4, 7));
+
+        const healthCheck = await page.evaluate(() => {
+            const currentUrl = window.location.href;
+            const currentPath = window.location.pathname.toLowerCase();
+            const currentSearch = window.location.search.toLowerCase();
+            const docTitle = (document.title || '').trim();
+            const bodyText = (document.body.innerText || '').toLowerCase();
+            const lowerTitle = docTitle.toLowerCase();
+
+            const evidence = [];
+
+            // 1. فحص Checkpoint / Security Check في الـ URL
+            if (currentPath.includes('/checkpoint/') || currentUrl.includes('checkpoint') || currentSearch.includes('next=checkpoint')) {
+                evidence.push(`URL Path contains checkpoint: ${currentPath}`);
+            }
+            if (currentPath.includes('/login/') || currentPath.includes('/login.php') || currentUrl.includes('login/device-based/')) {
+                evidence.push('Redirected to login page (Session Expired)');
+            }
+            if (currentPath.includes('/recover/') || currentPath.includes('/two_step_verification/')) {
+                evidence.push(`Security Challenge path: ${currentPath}`);
+            }
+            if (currentPath.includes('/accountquality/') || currentPath.includes('/restrictions/')) {
+                evidence.push('Account restrictions dashboard detected');
+            }
+
+            // 2. فحص العناوين (Title)
+            if (lowerTitle.includes('checkpoint') || lowerTitle.includes('security check') || lowerTitle.includes('confirm your identity') || lowerTitle.includes('فحص أمني') || lowerTitle.includes('تأكيد هويتك')) {
+                evidence.push(`Page title indicates checkpoint: "${docTitle}"`);
+            }
+
+            // 3. فحص نصوص التحقق والحظر الصريحة
+            const checkpointPatterns = [
+                { term: 'تأكيد هويتك الشخصية', label: 'تأكيد هويتك الشخصية' },
+                { term: 'يرجى تأكيد هويتك', label: 'يرجى تأكيد هويتك' },
+                { term: 'تأكيد هويتك', label: 'تأكيد هويتك' },
+                { term: 'فحص أمني', label: 'فحص أمني' },
+                { term: 'مراجعة أمنية', label: 'مراجعة أمنية' },
+                { term: 'التحقق من هويتك', label: 'التحقق من هويتك' },
+                { term: 'تم قفل حسابك', label: 'تم قفل حسابك' },
+                { term: 'تم تقييد حسابك', label: 'تم تقييد حسابك' },
+                { term: 'نشاط غير معتاد', label: 'نشاط غير معتاد' },
+                { term: 'تسجيل دخول غير معتاد', label: 'تسجيل دخول غير معتاد' },
+                { term: 'confirm your identity', label: 'Confirm your identity' },
+                { term: 'verify your identity', label: 'Verify your identity' },
+                { term: 'security check', label: 'Security check' },
+                { term: 'account review', label: 'Account review' },
+                { term: 'suspicious login', label: 'Suspicious login' },
+                { term: 'temporarily blocked', label: 'Temporarily blocked' },
+                { term: 'account restricted', label: 'Account restricted' },
+                { term: 'your account has been locked', label: 'Account locked' }
+            ];
+
+            for (const pat of checkpointPatterns) {
+                if (bodyText.includes(pat.term)) {
+                    evidence.push(`Found explicit security text: "${pat.label}"`);
+                }
+            }
+
+            // تصنيف الحالة
+            let status = 'HEALTHY';
+            let reason = 'الجلسة سليمة وطبيعية';
+
+            if (evidence.some(e => e.includes('checkpoint') || e.includes('قفل حسابك') || e.includes('Account locked'))) {
+                status = 'CHECKPOINT';
+                reason = 'الحساب في وضع Checkpoint أو مقفل أمنياً';
+            } else if (evidence.some(e => e.includes('Session Expired') || e.includes('login'))) {
+                status = 'LOGIN_REQUIRED';
+                reason = 'الجلسة منتهية وتتطلب تسجيل دخول جديد';
+            } else if (evidence.some(e => e.includes('Confirm your identity') || e.includes('تأكيد هويتك') || e.includes('verify your identity'))) {
+                status = 'IDENTITY_VERIFICATION';
+                reason = 'الحساب يطلب تأكيد الهوية الشخصية';
+            } else if (evidence.some(e => e.includes('Security check') || e.includes('فحص أمني') || e.includes('مراجعة أمنية'))) {
+                status = 'SECURITY_CHECK';
+                reason = 'الحساب يطلب مراجعة أمنية';
+            } else if (evidence.some(e => e.includes('Account restricted') || e.includes('تم تقييد حسابك'))) {
+                status = 'ACCOUNT_RESTRICTED';
+                reason = 'الحساب مقيد من النشر أو التفاعل';
+            } else if (evidence.length > 0) {
+                status = 'UNKNOWN_AUTH_STATE';
+                reason = 'حالة أمنية غير معروفة تتطلب تدخلاً';
+            }
+
+            return {
+                healthy: status === 'HEALTHY',
+                status,
+                url: currentUrl,
+                title: docTitle,
+                evidence,
+                reason
+            };
+        });
+
+        return healthCheck;
+    } catch (err) {
+        return {
+            healthy: false,
+            status: 'UNKNOWN_AUTH_STATE',
+            url: page.url(),
+            title: '',
+            evidence: [err.message],
+            reason: `تعذر فحص صحة الجلسة: ${err.message}`
+        };
+    }
+}
+
 // 🔍 فحص عضوية المجموعة قبل النشر (CHECK_GROUP_MEMBERSHIP)
 async function checkGroupMembership(page, group) {
     setStage('2.5', `فحص حالة العضوية والصلاحيات بالمجموعة (${group.name})`);
@@ -1493,6 +1606,23 @@ async function processOnePost(post) {
             }
         }
     } catch (e) {}
+
+    // 🛡️ فحص صحة وأمان جلسة فيسبوك الشامل قبل سحب أي مجموعة من الطابور
+    const sessionHealthPage = await context.newPage();
+    const sessionHealth = await checkFacebookSessionHealth(sessionHealthPage);
+    try { await sessionHealthPage.close(); } catch(e) {}
+
+    if (!sessionHealth.healthy) {
+        await logToDashboard(
+            `🚨🚨 [BOT 2 — FACEBOOK CHECKPOINT DETECTED] 🚨🚨\nالحساب: 2\nالحالة: ${sessionHealth.status}\nالرابط: ${sessionHealth.url}\nالعنوان: ${sessionHealth.title}\nالدليل: ${sessionHealth.evidence.join(' | ')}\nالسبب: ${sessionHealth.reason}\nالإجراء: تم إيقاف Bot 2 بأمان انتظاراً للتدخل اليدوي.`,
+            'error'
+        );
+        await updateBotLastActive('IDLE');
+        await browser.close();
+        return; // الخروج الآمن الفوري دون سحب أي مجموعة من الطابور ودون تسجيل نجاح
+    } else {
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تأكيد سلامة وصحة جلسة فيسبوك (الحالة: HEALTHY). البدء بمعالجة الإعلان...`, 'success');
+    }
 
     let remainingGroups = [];
 
