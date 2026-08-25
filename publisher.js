@@ -571,54 +571,60 @@ async function openPostBox(page) {
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
+        'div[role="tab"]:has-text("المناقشة")',
+        'div[role="tab"]:has-text("المناقشات")',
+        'div[role="tab"]:has-text("المنشورات")',
         'div[role="tab"]:has-text("Discussion")',
+        'div[role="tab"]:has-text("Discussions")',
+        'div[role="tab"]:has-text("Posts")',
         'a[role="tab"]:has-text("مناقشة")',
+        'a[role="tab"]:has-text("المناقشة")',
+        'a[role="tab"]:has-text("المناقشات")',
+        'a[role="tab"]:has-text("المنشورات")',
         'a[role="tab"]:has-text("Discussion")',
+        'a[role="tab"]:has-text("Discussions")',
+        'a[role="tab"]:has-text("Posts")',
+        'a[href*="/buy_sell_discussion"]',
+        'a[href*="/discussion"]',
+        'a[href*="/feed"]',
+        'text="المناقشة"',
+        'text="المناقشات"',
+        'text="المنشورات"',
         'text="عرض المناقشات"',
         'text="مناقشة"',
-        'text="Discussion"'
+        'text="Discussion"',
+        'text="Discussions"',
+        'text="Posts"'
     ];
 
+    let switchedTab = false;
     for (const tabSel of discussionTabs) {
         if (Date.now() - stage4StartTime > MAX_STAGE4_DURATION) return false;
         try {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
                 await tabBtn.click({ timeout: 4000, force: true });
-                await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)، ننتظر لاستقرار الواجهة...`, 'info');
+                switchedTab = true;
+                await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (${tabSel})، ننتظر لاستقرار الواجهة...`, 'info');
                 await smartSleep(randomDelay(10, 18));
                 break;
             }
         } catch (e) {}
     }
 
-    // 👥 فحص ونقر زر الانضمام للمجموعة إذا لم يكن الحساب منضماً بعد
-    try {
-        const joinBtns = [
-            'div[role="button"]:has-text("الانضمام إلى المجموعة")',
-            'div[role="button"]:has-text("الانضمام")',
-            'div[role="button"]:has-text("انضمام")',
-            'div[role="button"]:has-text("Join group")',
-            'div[role="button"]:has-text("Join Group")',
-            'div[role="button"]:has-text("Join")',
-            'text="الانضمام إلى المجموعة"',
-            'text="Join group"'
-        ];
-        for (const jSel of joinBtns) {
-            if (Date.now() - stage4StartTime > MAX_STAGE4_DURATION) return false;
-            const jBtn = page.locator(jSel).first();
-            if (await jBtn.count() > 0 && await jBtn.isVisible()) {
-                await jBtn.click({ timeout: 4000, force: true });
-                await logToDashboard(`👥 [المرحلة 4] [${ACCOUNT_NAME}] تم طلب الانضمام للمجموعة أولاً...`, 'info');
-                await smartSleep(randomDelay(4, 8));
-                break;
-            }
-        }
-    } catch(e) {}
+    if (!switchedTab) {
+        await logToDashboard(`ℹ️ [المرحلة 3] [${ACCOUNT_NAME}] لم يظهر تبويب مناقشة منفصل، البقاء في واجهة الصفحة المباشرة.`, 'info');
+    }
 
     // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور
     setStage(4, 'البحث عن مربع النشر وفتحه');
-    await smartSleep(randomDelay(8, 14));
+    await smartSleep(randomDelay(6, 10));
+
+    // تمرير خفيف لتنشيط ظهور عناصر النشر في صفحة الجوال
+    try {
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await smartSleep(1500);
+    } catch(e) {}
 
     const selectors = [
         'div[data-sigil="m-feed-composer-opener"]',
@@ -626,11 +632,21 @@ async function openPostBox(page) {
         'span:has-text("اكتب شيئًا...")',
         'span:has-text("اكتب شيئاً...")',
         'span:has-text("اكتب شيئا...")',
+        'span:has-text("اكتب منشوراً...")',
+        'span:has-text("اكتب منشورا...")',
+        'span:has-text("ما الذي تفكر فيه؟")',
+        'span:has-text("ما الذي تفكر فيه")',
         'span:has-text("Write something...")',
         'span:has-text("Write something")',
         'text="اكتب شيئًا..."',
         'text="اكتب شيئاً..."',
         'text="اكتب شيئا..."',
+        'text="اكتب منشوراً..."',
+        'text="اكتب منشورا..."',
+        'text="اكتب منشوراً"',
+        'text="اكتب منشورا"',
+        'text="ما الذي تفكر فيه؟"',
+        'text="ما الذي تفكر فيه"',
         'text="Write something..."',
         'text="Write something"',
         'text="بم تفكر؟"',
@@ -639,8 +655,10 @@ async function openPostBox(page) {
         'text="What\'s on your mind"',
         'text="إنشاء منشور عام..."',
         'text="إنشاء منشور عام"',
+        'text="إنشاء منشور"',
         'text="Create a public post..."',
         'text="Create a public post"',
+        'text="Create post"',
         'text="ماذا تبيع؟"',
         'text="ماذا تبيع"',
         'text="What are you selling?"',
@@ -651,6 +669,9 @@ async function openPostBox(page) {
         'text="بيع شيء ما"',
         'div[role="button"]:has-text("اكتب شيئًا...")',
         'div[role="button"]:has-text("اكتب شيئاً...")',
+        'div[role="button"]:has-text("اكتب منشوراً...")',
+        'div[role="button"]:has-text("اكتب منشورا...")',
+        'div[role="button"]:has-text("ما الذي تفكر فيه")',
         'div[role="button"]:has-text("Write something...")',
         'div[role="button"]:has-text("Write something")',
         'div[role="button"]:has-text("بم تفكر؟")',
@@ -690,9 +711,11 @@ async function openPostBox(page) {
         'text=/اكتب/i',
         'text=/تفكر/i',
         'text=/بم تفكر/i',
+        'a[href*="/composer/mbasic"]',
         'a[href*="/composer/"]',
         'a[href*="multi_step_composer"]',
-        'a[href*="for_sale"]'
+        'a[href*="for_sale"]',
+        'a[href*="sell_item"]'
     ];
 
     for (const selector of selectors) {
@@ -705,7 +728,7 @@ async function openPostBox(page) {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
                 await element.click({ timeout: 4000, force: true });
-                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
+                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور عبر (${selector})، ننتظر لتفتح بهدوء...`, 'info');
                 await smartSleep(randomDelay(10, 18));
 
                 const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree', 'text=قبول', 'text=Accept', 'text=إغلاق', 'text=Close', 'text=ليس الآن', 'text=Not Now'];
@@ -727,6 +750,7 @@ async function openPostBox(page) {
 
     const discussionBtns = [
         'text=بدء مناقشة', 'text=Start Discussion', 'text=مناقشة', 'text=Discussion',
+        'text=المناقشة', 'text=المنشورات',
         'a[href*="/discussion"]', 'div[role="button"]:has-text("مناقشة")',
         'div[role="button"]:has-text("عنصر للبيع")', 'div[role="button"]:has-text("Sell")',
         'text=عرض عنصر للبيع', 'text=Sell something'
@@ -752,8 +776,10 @@ async function openPostBox(page) {
                 return (
                     txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
+                    txt.includes('ما الذي تفكر فيه') ||
                     txt.includes("What's on your mind") || 
                     txt.includes('إنشاء منشور') ||
+                    txt.includes('اكتب منشور') ||
                     txt.includes('Create a public post') ||
                     aria.includes('اكتب') ||
                     aria.includes('Write') ||
@@ -774,6 +800,23 @@ async function openPostBox(page) {
             return true;
         }
     } catch (e) {}
+
+    // فحص تشخيصي لمعرفة سبب عدم العثور على المربع في الصفحة
+    try {
+        const pageDiagnostic = await page.evaluate(() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const isRestricted = body.includes('لا يمكن سوى للمسؤولين') || body.includes('only admins') || body.includes('تم إيقاف النشر') || body.includes('posting is paused');
+            const requiresApproval = body.includes('موافقة المسؤول') || body.includes('admin approval');
+            const hasForSale = body.includes('عرض عنصر للبيع') || body.includes('sell something') || body.includes('ماذا تبيع');
+            return { isRestricted, requiresApproval, hasForSale, bodySnippet: body.slice(0, 150).replace(/\n+/g, ' ') };
+        });
+
+        if (pageDiagnostic.isRestricted) {
+            await logToDashboard(`⚠️ [المرحلة 4] [${ACCOUNT_NAME}] تشخيص: المجموعة مقيدة لنشر المسؤولين فقط.`, 'info');
+        } else if (pageDiagnostic.hasForSale) {
+            await logToDashboard(`⚠️ [المرحلة 4] [${ACCOUNT_NAME}] تشخيص: الصفحة في واجهة بيع وشراء Marketplace بدون محرر نصوص مباشر.`, 'info');
+        }
+    } catch(e) {}
 
     return false;
 }
