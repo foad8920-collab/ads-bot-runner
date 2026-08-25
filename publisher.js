@@ -1,18 +1,18 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
- 
+
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🌟 تخصيص رقم الحساب والسيرفر للبوت 1 (الافتراضي: 1 لبوت 1 على Render، أو عبر متغير البيئة)
+// 🌟 تخصيص رقم الحساب والسيرفر للبوت 2 (الافتراضي: 2 لبوت 2 على Railway، أو عبر متغير البيئة)
 const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '2').trim();
 const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) 
     ? `./cookies${ACCOUNT_NUM}.json` 
-    : (fs.existsSync('./cookies2.json') ? './cookies1.json' : './cookies.json');
+    : (fs.existsSync('./cookies2.json') ? './cookies2.json' : './cookies.json');
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 const BOT_DB_NAME = `bot${ACCOUNT_NUM}`;
 const BOT_GROUP_FIELD = `bot${ACCOUNT_NUM}_group`;
@@ -23,9 +23,18 @@ const BOT_AI_FIELD = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACC
 // 🔗 دوال الربط بلوحة التحكم المركزية 🟢 
 // -------------------------------------------------------------------------
 
+if (typeof globalThis.WebSocket === 'undefined') {
+    try {
+        globalThis.WebSocket = require('ws');
+    } catch(e) {}
+}
+
 const supabase = createClient(
     'https://bmsfhqmsovicpgxxwsgi.supabase.co',
-    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef'
+    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef',
+    {
+        auth: { persistSession: false, autoRefreshToken: false }
+    }
 );
 
 const TEMP_DIR = './temp';
@@ -411,6 +420,147 @@ function stopStageWatchdog() {
     currentStageInfo = null;
 }
 
+// 🔍 فحص عضوية المجموعة قبل النشر (CHECK_GROUP_MEMBERSHIP)
+async function checkGroupMembership(page, group) {
+    setStage('2.5', `فحص حالة العضوية والصلاحيات بالمجموعة (${group.name})`);
+    try {
+        const bodyText = (await page.evaluate(() => document.body.innerText || '')).toLowerCase();
+
+        // 1. فحص ما إذا كان الحساب يظهر طلباً معلقاً مسبقاً
+        if (bodyText.includes('طلب معلق') || bodyText.includes('طلبك قيد المراجعة') || bodyText.includes('pending approval') || bodyText.includes('تم إرسال طلب الانضمام') || bodyText.includes('طلب الانضمام معلق')) {
+            return { status: 'GROUP_JOIN_PENDING', reason: 'طلب الانضمام قيد مراجعة مسؤولي المجموعة مسبقاً' };
+        }
+
+        // 2. فحص أزرار الانضمام (Join Group)
+        const joinSelectors = [
+            'div[role="button"]:has-text("الانضمام إلى المجموعة")',
+            'div[role="button"]:has-text("الانضمام")',
+            'div[role="button"]:has-text("انضمام")',
+            'div[role="button"]:has-text("Join group")',
+            'div[role="button"]:has-text("Join Group")',
+            'div[role="button"]:has-text("Join")',
+            'button:has-text("الانضمام إلى المجموعة")',
+            'button:has-text("الانضمام")',
+            'button:has-text("انضمام")',
+            'button:has-text("Join group")',
+            'text="الانضمام إلى المجموعة"',
+            'text="Join group"'
+        ];
+
+        let joinBtn = null;
+        for (const jSel of joinSelectors) {
+            try {
+                const btn = page.locator(jSel).first();
+                if (await btn.count() > 0 && await btn.isVisible()) {
+                    const btnText = (await btn.innerText()).trim();
+                    if (!btnText.includes('عضو') && !btnText.includes('تم الانضمام') && !btnText.includes('Joined') && !btnText.includes('Member')) {
+                        joinBtn = btn;
+                        break;
+                    }
+                }
+            } catch(e) {}
+        }
+
+        // إذا لم يوجد زر انضمام، فالحساب عضو بالفعل أو الصفحة مفتوحة مباشرة
+        if (!joinBtn) {
+            await logToDashboard(`✅ [CHECK_GROUP_MEMBERSHIP] [${ACCOUNT_NAME}] الحساب عضو بالفعل في المجموعة (${group.name}) ومؤهل للنشر.`, 'success');
+            return { status: 'MEMBER', canPost: true };
+        }
+
+        await logToDashboard(`👥 [CHECK_GROUP_MEMBERSHIP] [${ACCOUNT_NAME}] الحساب غير منضم لمجموعة (${group.name})، جاري النقر على زر الانضمام...`, 'info');
+        await joinBtn.click({ timeout: 4000, force: true });
+        await smartSleep(randomDelay(4, 7));
+
+        // 3. فحص استجابة فيسبوك بعد النقر على زر الانضمام
+        const postJoinCheck = await page.evaluate(() => {
+            // 1. البحث عن Dialog أو Modal أو Form خاص بعملية الانضمام
+            const dialog = document.querySelector(
+                'div[role="dialog"], div[aria-modal="true"], .modal, form[action*="group_join"], div[data-sigil*="dialog"], div[data-sigil*="modal"]'
+            );
+
+            // استخراج نصوص الحوار إذا وجد، أو مؤشرات التنبيه العائمة
+            const dialogText = dialog ? (dialog.innerText || dialog.textContent || '').toLowerCase() : '';
+            const bodyText = (document.body.innerText || '').toLowerCase();
+
+            // فحص الأسئلة والشروط والـ CAPTCHA محصور داخل عنصر الـ Dialog/Form فقط لمنع أي False Positive من الـ Feed
+            const hasQuestions = dialog && (
+                dialogText.includes('أسئلة') || 
+                dialogText.includes('أسئلة الانضمام') ||
+                dialogText.includes('إجابة') || 
+                dialogText.includes('questions') || 
+                dialogText.includes('يرجى الإجابة') || 
+                dialogText.includes('قواعد المجموعة') || 
+                dialogText.includes('شروط المجموعة') || 
+                dialogText.includes('شروط') || 
+                dialogText.includes('يرجى الموافقة') || 
+                dialogText.includes('rules') ||
+                dialogText.includes('captcha') ||
+                dialogText.includes('رمز التحقق') ||
+                dialogText.includes('أوافق على قواعد')
+            );
+
+            const hasFormInputs = dialog && dialog.querySelectorAll('input[type="text"], textarea, input[type="checkbox"], input[type="radio"]').length > 0;
+
+            // فحص حالة الطلب المعلق (Pending) داخل Dialog أو في رسائل الحالة بالصفحة
+            const isPending = 
+                dialogText.includes('طلب معلق') || 
+                dialogText.includes('تم إرسال الطلب') || 
+                dialogText.includes('قيد المراجعة') || 
+                dialogText.includes('pending') || 
+                dialogText.includes('pending approval') ||
+                dialogText.includes('طلب الانضمام معلق') ||
+                bodyText.includes('طلب الانضمام قيد المراجعة') ||
+                bodyText.includes('تم إرسال طلب الانضمام');
+
+            // فحص اكتمال العضوية
+            const isJoinedNow = 
+                dialogText.includes('أنت عضو') || 
+                dialogText.includes('تم الانضمام') || 
+                dialogText.includes('joined') || 
+                dialogText.includes('member') ||
+                bodyText.includes('أنت عضو في المجموعة');
+
+            return {
+                hasDialog: !!dialog,
+                hasQuestions,
+                hasFormInputs,
+                isPending,
+                isJoinedNow
+            };
+        });
+
+        // الحالة الثالثة: أسئلة أو شروط تتطلب تدخلاً يدوياً (ممنوع التخمين أو التجاوز)
+        if (postJoinCheck.hasQuestions || postJoinCheck.hasFormInputs) {
+            return {
+                status: 'MANUAL_ACTION_REQUIRED',
+                reason: 'ظهرت أسئلة انضمام أو شروط تتطلب تعبئة يدوية'
+            };
+        }
+
+        // الحالة الرابعة: إذا ظهرت نافذة حوار غير معروفة
+        if (postJoinCheck.hasDialog && !postJoinCheck.isPending && !postJoinCheck.isJoinedNow) {
+            return {
+                status: 'UNKNOWN_MEMBERSHIP_DIALOG',
+                reason: 'ظهرت نافذة حوار غير معروفة أثناء محاولة الانضمام'
+            };
+        }
+
+        // الحالة الثانية: الطلب أصبح معلقاً بانتظار الموافقة
+        if (postJoinCheck.isPending) {
+            return {
+                status: 'GROUP_JOIN_PENDING',
+                reason: 'طلب الانضمام معلق بانتظار موافقة مسؤولي المجموعة'
+            };
+        }
+
+        // تم الانضمام بنجاح
+        return { status: 'MEMBER', canPost: true };
+
+    } catch (e) {
+        return { status: 'MEMBER', canPost: true };
+    }
+}
+
 async function openPostBox(page) {
     const stage4StartTime = Date.now();
     const MAX_STAGE4_DURATION = 12 * 60 * 1000; // مهلة أقصاها 12 دقيقة للبحث عن مربع النشر
@@ -769,11 +919,29 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 2: الفحص الأمني للجلسة واستقرار الحساب
         setStage(2, 'الفحص الأمني للجلسة واستقرار الحساب');
-        await logToDashboard(`✅ [المرحلة 2] [${ACCOUNT_NAME}] تم تأكيد استقرار الجلسة والانتقال لفتح المنشور`, 'success');
+        await logToDashboard(`✅ [المرحلة 2] [${ACCOUNT_NAME}] تم تأكيد استقرار الجلسة والانتقال لفحص العضوية`, 'success');
+
+        // 🔍 المرحلة 2.5: التحقق من عضوية المجموعة وصلاحيات النشر (CHECK_GROUP_MEMBERSHIP)
+        const membership = await checkGroupMembership(page, group);
+
+        if (membership.status === 'GROUP_JOIN_PENDING') {
+            await logToDashboard(`⏳ [${ACCOUNT_NAME}] [GROUP_JOIN_PENDING] المجموعة (${group.name}): ${membership.reason}. الانتقال للمجموعة التالية...`, 'info');
+            throw new Error(`GROUP_JOIN_PENDING: ${membership.reason}`);
+        }
+
+        if (membership.status === 'MANUAL_ACTION_REQUIRED') {
+            await logToDashboard(`⚠️ [BOT 2 — تدخل يدوي مطلوب]\nالمجموعة: ${group.name}\nالرابط: ${targetUrl}\nالسبب: ${membership.reason}`, 'error');
+            throw new Error(`GROUP_REQUIRES_MANUAL_ACTION: ${membership.reason}`);
+        }
+
+        if (membership.status === 'UNKNOWN_MEMBERSHIP_DIALOG') {
+            await logToDashboard(`⚠️ [BOT 2 — UNKNOWN_MEMBERSHIP_DIALOG]\nالمجموعة: ${group.name}\nالرابط: ${targetUrl}\nالسبب: ${membership.reason}`, 'error');
+            throw new Error(`UNKNOWN_MEMBERSHIP_DIALOG: ${membership.reason}`);
+        }
 
         // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
         const opened = await openPostBox(page);
-        if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
+        if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة أو مقيدة للمسؤولين)');
 
         await smartSleep(randomDelay(7, 12)); 
 
