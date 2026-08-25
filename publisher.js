@@ -226,7 +226,7 @@ function randomDelay(minSeconds, maxSeconds) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي مع جلب ديناميكي للنماذج النشطة ومهلة كافية
+// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي مع جلب النماذج النشطة ديناميكياً
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
@@ -962,9 +962,9 @@ async function openPostBox(page) {
 }
 
 async function pasteTextWithLines(page, postText) {
-    // ⏳ المرحلة 7: التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية
+    // ⏳ المرحلة 7: التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية (مع منح وقت واستقرار كافٍ)
     setStage(7, 'التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية');
-    await smartSleep(randomDelay(4, 8));
+    await smartSleep(randomDelay(6, 10)); // وقت كافٍ لاستقرار ظهور الحقل
 
     const targetSelectors = [
         'textarea[name="xc_message"]',
@@ -1010,16 +1010,18 @@ async function pasteTextWithLines(page, postText) {
     if (textbox) {
         try {
             await textbox.click({ timeout: 6000, force: true });
-            await smartSleep(1500);
+            await smartSleep(2500); // استقرار بعد النقر والتركيز
 
             const tagName = await textbox.evaluate(el => el.tagName.toLowerCase());
             if (tagName === 'textarea' || tagName === 'input') {
                 await textbox.fill(postText);
+                await smartSleep(2000); // راحة بعد تعبئة الـ textarea
                 await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم كتابة النص داخل حقل الـ textarea بنجاح`, 'success');
                 return;
             }
 
             await page.keyboard.insertText(postText);
+            await smartSleep(2500); // راحة بعد حقن النص
             await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص مع الحفاظ على الأسطر بنجاح`, 'success');
             return;
         } catch (err) {
@@ -1041,6 +1043,7 @@ async function pasteTextWithLines(page, postText) {
                 }
             }
         }, postText);
+        await smartSleep(2500);
         await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (DOM Trigger)`, 'success');
     } catch(e) {
         throw new Error('تعذر العثور على حقل نص صالح للكتابة داخل هذه المجموعة');
@@ -1128,9 +1131,9 @@ async function publishToGroup(page, group, post, imagePath) {
 
         await smartSleep(randomDelay(7, 12)); 
 
-        // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي للبوت 2
+        // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي
         setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
-        let postText = post[BOT_AI_FIELD] || '';
+        let postText = post[BOT_AI_FIELD] || post.ai_final_text || '';
         
         if (!postText || postText.trim() === '') {
             await logToDashboard(`🧠 [المرحلة 5] [AI] صياغة نص جديد بالذكاء الاصطناعي لـ ${ACCOUNT_NAME} لمجموعة: ${group.name}...`, 'info');
@@ -1526,7 +1529,7 @@ async function processOnePost(post) {
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (ad_video): ${mediaUrl}`, 'info');
     } else if (post.video_url && post.video_url.trim() !== '') {
         mediaUrl = post.video_url.trim();
-        isVideoPost = true;
+        isVideoPost = true; 
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (video_url): ${mediaUrl}`, 'info');
     } else if (post.ad_image && post.ad_image.trim() !== '') {
         mediaUrl = post.ad_image.trim();
@@ -1728,7 +1731,7 @@ async function processOnePost(post) {
             let currentLogId = null;
             try {
                 // 🚀 إرسال حالة (جاري النشر) لتظهر برتقالية في لوحة التحكم
-                let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ad_title;
+                let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
                 currentLogId = await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
 
                 // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
@@ -1736,7 +1739,7 @@ async function processOnePost(post) {
                 successCount++;
                 
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiText = latestPost?.[BOT_AI_FIELD] || freshPost[BOT_AI_FIELD] || freshPost.ad_title;
+                let finalAiText = latestPost?.[BOT_AI_FIELD] || latestPost?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
                 
                 await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText, currentLogId);
                 await incrementBotCounters();
@@ -1760,7 +1763,7 @@ async function processOnePost(post) {
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiTextFail = latestPostFail?.[BOT_AI_FIELD] || freshPost[BOT_AI_FIELD] || freshPost.ad_title;
+                let finalAiTextFail = latestPostFail?.[BOT_AI_FIELD] || latestPostFail?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
                 
                 await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail, currentLogId);
 
