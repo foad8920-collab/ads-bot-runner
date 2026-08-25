@@ -226,37 +226,64 @@ function randomDelay(minSeconds, maxSeconds) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي
+// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي مع جلب ديناميكي للنماذج النشطة ومهلة كافية
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
     if (!apiKey) {
+        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
         return `${title}\n\n${description}`;
     }
 
-    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب ومختلف مع الحفاظ على كل التفاصيل وأرقام الهواتف والروابط:
-العنوان: ${title}
-الوصف: ${description}`;
+    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب، جديد، ومختلف تماماً مع الحفاظ على نفس الفكرة والمعلومات الأساسية والروابط وأرقام الهواتف إن وجدت. اجعل العبارات طبيعية وغير مكررة.
+العنوان الاصلي: ${title}
+الوصف الاصلي: ${description}
 
-    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro'];
-    for (const modelName of candidateModels) {
-        try {
-            const response = await axios({
-                method: 'post',
-                url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-                headers: { 'Content-Type': 'application/json' },
-                data: { contents: [{ parts: [{ text: promptText }] }] },
-                timeout: 10000
-            });
+أعطني النتيجة مباشرة بالتنسيق التالي:
+العنوان: [العنوان الجديد]
+الوصف: [الوصف الجديد]`;
 
-            const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (aiText && aiText.trim().length > 10) {
-                await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${modelName})!`, 'success');
-                return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
+    try {
+        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 15000 });
+        const validModels = (modelsResponse.data.models || []).filter(m => 
+            m.supportedGenerationMethods && 
+            m.supportedGenerationMethods.includes('generateContent') &&
+            m.name.includes('gemini')
+        );
+
+        if (validModels.length === 0) {
+            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص حالياً.`, 'info');
+            return `${title}\n\n${description}`;
+        }
+
+        for (const modelObj of validModels) {
+            const exactModelName = modelObj.name;
+            try {
+                await logToDashboard(`🧠 [AI] جاري محاولة الاتصال بالنموذج: ${exactModelName}...`, 'info');
+
+                const response = await axios({
+                    method: 'post',
+                    url: `https://generativelanguage.googleapis.com/v1beta/${exactModelName}:generateContent?key=${apiKey}`,
+                    headers: { 'Content-Type': 'application/json' },
+                    data: { contents: [{ parts: [{ text: promptText }] }] },
+                    timeout: 60000
+                });
+
+                const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (aiText && aiText.trim().length > 10) {
+                    await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${exactModelName})!`, 'success');
+                    return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
+                }
+            } catch (err) {
+                await logToDashboard(`⚠️ [AI] تنبيه أثناء استدعاء النموذج (${exactModelName}): ${err.response?.data?.error?.message || err.message}`, 'info');
+                continue;
             }
-        } catch (e) {}
+        }
+    } catch (e) {
+        await logToDashboard(`⚠️ [AI] فشل الاتصال بقائمة نماذج Gemini: ${e.response?.data?.error?.message || e.message}`, 'info');
     }
 
+    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة بالذكاء الاصطناعي، سيتم استخدام النص الأصلي.`, 'info');
     return `${title}\n\n${description}`;
 }
 
@@ -598,7 +625,7 @@ async function checkGroupMembership(page, group) {
             // فحص الأسئلة والشروط والـ CAPTCHA محصور داخل عنصر الـ Dialog/Form فقط لمنع أي False Positive من الـ Feed
             const hasQuestions = dialog && (
                 dialogText.includes('أسئلة') || 
-                dialogText.includes('أسئلة الانضمام') ||
+                dialogText.includes('أسئلة الانضمام') || 
                 dialogText.includes('إجابة') || 
                 dialogText.includes('questions') || 
                 dialogText.includes('يرجى الإجابة') || 
@@ -606,9 +633,9 @@ async function checkGroupMembership(page, group) {
                 dialogText.includes('شروط المجموعة') || 
                 dialogText.includes('شروط') || 
                 dialogText.includes('يرجى الموافقة') || 
-                dialogText.includes('rules') ||
-                dialogText.includes('captcha') ||
-                dialogText.includes('رمز التحقق') ||
+                dialogText.includes('rules') || 
+                dialogText.includes('captcha') || 
+                dialogText.includes('رمز التحقق') || 
                 dialogText.includes('أوافق على قواعد')
             );
 
@@ -620,9 +647,9 @@ async function checkGroupMembership(page, group) {
                 dialogText.includes('تم إرسال الطلب') || 
                 dialogText.includes('قيد المراجعة') || 
                 dialogText.includes('pending') || 
-                dialogText.includes('pending approval') ||
-                dialogText.includes('طلب الانضمام معلق') ||
-                bodyText.includes('طلب الانضمام قيد المراجعة') ||
+                dialogText.includes('pending approval') || 
+                dialogText.includes('طلب الانضمام معلق') || 
+                bodyText.includes('طلب الانضمام قيد المراجعة') || 
                 bodyText.includes('تم إرسال طلب الانضمام');
 
             // فحص اكتمال العضوية
@@ -630,7 +657,7 @@ async function checkGroupMembership(page, group) {
                 dialogText.includes('أنت عضو') || 
                 dialogText.includes('تم الانضمام') || 
                 dialogText.includes('joined') || 
-                dialogText.includes('member') ||
+                dialogText.includes('member') || 
                 bodyText.includes('أنت عضو في المجموعة');
 
             return {
@@ -889,14 +916,14 @@ async function openPostBox(page) {
                 return (
                     txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
-                    txt.includes('ما الذي تفكر فيه') ||
+                    txt.includes('ما الذي تفكر فيه') || 
                     txt.includes("What's on your mind") || 
-                    txt.includes('إنشاء منشور') ||
-                    txt.includes('اكتب منشور') ||
-                    txt.includes('Create a public post') ||
-                    aria.includes('اكتب') ||
-                    aria.includes('Write') ||
-                    aria.includes('Create a public post') ||
+                    txt.includes('إنشاء منشور') || 
+                    txt.includes('اكتب منشور') || 
+                    txt.includes('Create a public post') || 
+                    aria.includes('اكتب') || 
+                    aria.includes('Write') || 
+                    aria.includes('Create a public post') || 
                     aria.includes('إنشاء منشور')
                 );
             });
@@ -1101,9 +1128,9 @@ async function publishToGroup(page, group, post, imagePath) {
 
         await smartSleep(randomDelay(7, 12)); 
 
-        // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي
+        // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي للبوت 2
         setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
-        let postText = post[BOT_AI_FIELD] || post.ai_final_text || '';
+        let postText = post[BOT_AI_FIELD] || '';
         
         if (!postText || postText.trim() === '') {
             await logToDashboard(`🧠 [المرحلة 5] [AI] صياغة نص جديد بالذكاء الاصطناعي لـ ${ACCOUNT_NAME} لمجموعة: ${group.name}...`, 'info');
@@ -1505,7 +1532,7 @@ async function processOnePost(post) {
         mediaUrl = post.ad_image.trim();
         const lowerImg = mediaUrl.toLowerCase();
         if (lowerImg.includes('.mp4') || lowerImg.includes('.mov') || lowerImg.includes('.webm') || lowerImg.includes('.mkv') || lowerImg.includes('.avi')) {
-            isVideoPost = true;
+            isVideoPost = true; 
             await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو عبر حقل الصورة (ad_image): ${mediaUrl}`, 'info');
         } else {
             await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد رابط صورة في السوبيس (ad_image): ${mediaUrl}`, 'info');
@@ -1701,7 +1728,7 @@ async function processOnePost(post) {
             let currentLogId = null;
             try {
                 // 🚀 إرسال حالة (جاري النشر) لتظهر برتقالية في لوحة التحكم
-                let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
+                let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ad_title;
                 currentLogId = await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
 
                 // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
@@ -1709,7 +1736,7 @@ async function processOnePost(post) {
                 successCount++;
                 
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiText = latestPost?.[BOT_AI_FIELD] || latestPost?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
+                let finalAiText = latestPost?.[BOT_AI_FIELD] || freshPost[BOT_AI_FIELD] || freshPost.ad_title;
                 
                 await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText, currentLogId);
                 await incrementBotCounters();
@@ -1733,7 +1760,7 @@ async function processOnePost(post) {
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiTextFail = latestPostFail?.[BOT_AI_FIELD] || latestPostFail?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
+                let finalAiTextFail = latestPostFail?.[BOT_AI_FIELD] || freshPost[BOT_AI_FIELD] || freshPost.ad_title;
                 
                 await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail, currentLogId);
 
