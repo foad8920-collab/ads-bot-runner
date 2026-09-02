@@ -226,64 +226,37 @@ function randomDelay(minSeconds, maxSeconds) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي مع جلب النماذج النشطة ديناميكياً
+// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
     if (!apiKey) {
-        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
         return `${title}\n\n${description}`;
     }
 
-    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب، جديد، ومختلف تماماً مع الحفاظ على نفس الفكرة والمعلومات الأساسية والروابط وأرقام الهواتف إن وجدت. اجعل العبارات طبيعية وغير مكررة.
-العنوان الاصلي: ${title}
-الوصف الاصلي: ${description}
+    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب ومختلف مع الحفاظ على كل التفاصيل وأرقام الهواتف والروابط:
+العنوان: ${title}
+الوصف: ${description}`;
 
-أعطني النتيجة مباشرة بالتنسيق التالي:
-العنوان: [العنوان الجديد]
-الوصف: [الوصف الجديد]`;
+    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro'];
+    for (const modelName of candidateModels) {
+        try {
+            const response = await axios({
+                method: 'post',
+                url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+                headers: { 'Content-Type': 'application/json' },
+                data: { contents: [{ parts: [{ text: promptText }] }] },
+                timeout: 10000
+            });
 
-    try {
-        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 15000 });
-        const validModels = (modelsResponse.data.models || []).filter(m => 
-            m.supportedGenerationMethods && 
-            m.supportedGenerationMethods.includes('generateContent') &&
-            m.name.includes('gemini')
-        );
-
-        if (validModels.length === 0) {
-            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص حالياً.`, 'info');
-            return `${title}\n\n${description}`;
-        }
-
-        for (const modelObj of validModels) {
-            const exactModelName = modelObj.name;
-            try {
-                await logToDashboard(`🧠 [AI] جاري محاولة الاتصال بالنموذج: ${exactModelName}...`, 'info');
-
-                const response = await axios({
-                    method: 'post',
-                    url: `https://generativelanguage.googleapis.com/v1beta/${exactModelName}:generateContent?key=${apiKey}`,
-                    headers: { 'Content-Type': 'application/json' },
-                    data: { contents: [{ parts: [{ text: promptText }] }] },
-                    timeout: 60000
-                });
-
-                const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (aiText && aiText.trim().length > 10) {
-                    await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${exactModelName})!`, 'success');
-                    return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
-                }
-            } catch (err) {
-                await logToDashboard(`⚠️ [AI] تنبيه أثناء استدعاء النموذج (${exactModelName}): ${err.response?.data?.error?.message || err.message}`, 'info');
-                continue;
+            const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (aiText && aiText.trim().length > 10) {
+                await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${modelName})!`, 'success');
+                return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
             }
-        }
-    } catch (e) {
-        await logToDashboard(`⚠️ [AI] فشل الاتصال بقائمة نماذج Gemini: ${e.response?.data?.error?.message || e.message}`, 'info');
+        } catch (e) {}
     }
 
-    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة بالذكاء الاصطناعي، سيتم استخدام النص الأصلي.`, 'info');
     return `${title}\n\n${description}`;
 }
 
@@ -625,7 +598,7 @@ async function checkGroupMembership(page, group) {
             // فحص الأسئلة والشروط والـ CAPTCHA محصور داخل عنصر الـ Dialog/Form فقط لمنع أي False Positive من الـ Feed
             const hasQuestions = dialog && (
                 dialogText.includes('أسئلة') || 
-                dialogText.includes('أسئلة الانضمام') || 
+                dialogText.includes('أسئلة الانضمام') ||
                 dialogText.includes('إجابة') || 
                 dialogText.includes('questions') || 
                 dialogText.includes('يرجى الإجابة') || 
@@ -633,9 +606,9 @@ async function checkGroupMembership(page, group) {
                 dialogText.includes('شروط المجموعة') || 
                 dialogText.includes('شروط') || 
                 dialogText.includes('يرجى الموافقة') || 
-                dialogText.includes('rules') || 
-                dialogText.includes('captcha') || 
-                dialogText.includes('رمز التحقق') || 
+                dialogText.includes('rules') ||
+                dialogText.includes('captcha') ||
+                dialogText.includes('رمز التحقق') ||
                 dialogText.includes('أوافق على قواعد')
             );
 
@@ -647,9 +620,9 @@ async function checkGroupMembership(page, group) {
                 dialogText.includes('تم إرسال الطلب') || 
                 dialogText.includes('قيد المراجعة') || 
                 dialogText.includes('pending') || 
-                dialogText.includes('pending approval') || 
-                dialogText.includes('طلب الانضمام معلق') || 
-                bodyText.includes('طلب الانضمام قيد المراجعة') || 
+                dialogText.includes('pending approval') ||
+                dialogText.includes('طلب الانضمام معلق') ||
+                bodyText.includes('طلب الانضمام قيد المراجعة') ||
                 bodyText.includes('تم إرسال طلب الانضمام');
 
             // فحص اكتمال العضوية
@@ -657,7 +630,7 @@ async function checkGroupMembership(page, group) {
                 dialogText.includes('أنت عضو') || 
                 dialogText.includes('تم الانضمام') || 
                 dialogText.includes('joined') || 
-                dialogText.includes('member') || 
+                dialogText.includes('member') ||
                 bodyText.includes('أنت عضو في المجموعة');
 
             return {
@@ -916,14 +889,14 @@ async function openPostBox(page) {
                 return (
                     txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
-                    txt.includes('ما الذي تفكر فيه') || 
+                    txt.includes('ما الذي تفكر فيه') ||
                     txt.includes("What's on your mind") || 
-                    txt.includes('إنشاء منشور') || 
-                    txt.includes('اكتب منشور') || 
-                    txt.includes('Create a public post') || 
-                    aria.includes('اكتب') || 
-                    aria.includes('Write') || 
-                    aria.includes('Create a public post') || 
+                    txt.includes('إنشاء منشور') ||
+                    txt.includes('اكتب منشور') ||
+                    txt.includes('Create a public post') ||
+                    aria.includes('اكتب') ||
+                    aria.includes('Write') ||
+                    aria.includes('Create a public post') ||
                     aria.includes('إنشاء منشور')
                 );
             });
@@ -962,9 +935,9 @@ async function openPostBox(page) {
 }
 
 async function pasteTextWithLines(page, postText) {
-    // ⏳ المرحلة 7: التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية (مع منح وقت واستقرار كافٍ)
+    // ⏳ المرحلة 7: التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية
     setStage(7, 'التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية');
-    await smartSleep(randomDelay(6, 10)); // وقت كافٍ لاستقرار ظهور الحقل
+    await smartSleep(randomDelay(4, 8));
 
     const targetSelectors = [
         'textarea[name="xc_message"]',
@@ -1010,18 +983,16 @@ async function pasteTextWithLines(page, postText) {
     if (textbox) {
         try {
             await textbox.click({ timeout: 6000, force: true });
-            await smartSleep(2500); // استقرار بعد النقر والتركيز
+            await smartSleep(1500);
 
             const tagName = await textbox.evaluate(el => el.tagName.toLowerCase());
             if (tagName === 'textarea' || tagName === 'input') {
                 await textbox.fill(postText);
-                await smartSleep(2000); // راحة بعد تعبئة الـ textarea
                 await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم كتابة النص داخل حقل الـ textarea بنجاح`, 'success');
                 return;
             }
 
             await page.keyboard.insertText(postText);
-            await smartSleep(2500); // راحة بعد حقن النص
             await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص مع الحفاظ على الأسطر بنجاح`, 'success');
             return;
         } catch (err) {
@@ -1043,7 +1014,6 @@ async function pasteTextWithLines(page, postText) {
                 }
             }
         }, postText);
-        await smartSleep(2500);
         await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (DOM Trigger)`, 'success');
     } catch(e) {
         throw new Error('تعذر العثور على حقل نص صالح للكتابة داخل هذه المجموعة');
@@ -1449,66 +1419,95 @@ async function publishToGroup(page, group, post, imagePath) {
             }
         }
 
-        // ⏳ المرحلة 10: مراقبة وتأكيد خروج المنشور واختفاء شاشة الكتابة
+        // ⏳ المرحلة 10: مراقبة وتأكيد خروج المنشور واختفاء شاشة الكتابة (مهلة قصوى 10 دقائق)
         setStage(10, 'متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة');
+        const stage10StartTime = Date.now();
+        const MAX_STAGE10_DURATION = 10 * 60 * 1000; // مهلة أقصاها 10 دقائق
         
         let isPublishedConfirmed = false;
-        for (let checkAttempt = 0; checkAttempt < 6; checkAttempt++) {
-            await smartSleep(4000);
-            const checkResult = await page.evaluate(() => {
-                const bodyText = document.body.innerText || '';
+        let isStage10TimedOut = false;
+
+        const stage10Task = async () => {
+            for (let checkAttempt = 0; checkAttempt < 6; checkAttempt++) {
+                if (Date.now() - stage10StartTime > MAX_STAGE10_DURATION) {
+                    isStage10TimedOut = true;
+                    break;
+                }
+                await smartSleep(4000);
                 
-                const isPendingAdmin = 
-                    bodyText.includes('منشورك قيد المراجعة') ||
-                    bodyText.includes('تم إرسال المنشور للمسؤول') ||
-                    bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
-                    bodyText.includes('بانتظار موافقة المسؤول') ||
-                    bodyText.includes('بانتظار الموافقة') ||
-                    bodyText.includes('pending admin approval') ||
-                    bodyText.includes('submitted to admin') ||
-                    bodyText.includes('post is pending');
+                try {
+                    // حماية داخلية لـ page.evaluate بمهلة 6 ثوانٍ لكل محاولة فحص
+                    const evalPromise = page.evaluate(() => {
+                        const bodyText = document.body.innerText || '';
+                        
+                        const isPendingAdmin = 
+                            bodyText.includes('منشورك قيد المراجعة') ||
+                            bodyText.includes('تم إرسال المنشور للمسؤول') ||
+                            bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
+                            bodyText.includes('بانتظار موافقة المسؤول') ||
+                            bodyText.includes('بانتظار الموافقة') ||
+                            bodyText.includes('pending admin approval') ||
+                            bodyText.includes('submitted to admin') ||
+                            bodyText.includes('post is pending');
 
-                const activeInput = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[contenteditable="true"], div[role="textbox"]');
-                const isInputStillPresent = activeInput && activeInput.offsetParent !== null && (activeInput.innerText || activeInput.value || '').trim().length > 10;
-                const isStillInComposerUrl = window.location.href.includes('/composer/');
+                        const activeInput = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[contenteditable="true"], div[role="textbox"]');
+                        const isInputStillPresent = activeInput && activeInput.offsetParent !== null && (activeInput.innerText || activeInput.value || '').trim().length > 10;
+                        const isStillInComposerUrl = window.location.href.includes('/composer/');
 
-                return {
-                    isPendingAdmin,
-                    isInputStillPresent,
-                    isStillInComposerUrl
-                };
-            });
+                        return {
+                            isPendingAdmin,
+                            isInputStillPresent,
+                            isStillInComposerUrl
+                        };
+                    });
 
-            if (checkResult.isPendingAdmin) {
-                await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
-                isPublishedConfirmed = true;
-                break;
-            } else if (!checkResult.isInputStillPresent && !checkResult.isStillInComposerUrl) {
-                await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم تأكيد نشر المنشور بنجاح واختفاء واجهة التحرير!`, 'success');
-                isPublishedConfirmed = true;
-                break;
+                    const evalTimeout = new Promise(resolve => setTimeout(() => resolve(null), 6000));
+                    const checkResult = await Promise.race([evalPromise, evalTimeout]);
+
+                    if (checkResult) {
+                        if (checkResult.isPendingAdmin) {
+                            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
+                            isPublishedConfirmed = true;
+                            break;
+                        } else if (!checkResult.isInputStillPresent && !checkResult.isStillInComposerUrl) {
+                            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم تأكيد نشر المنشور بنجاح واختفاء واجهة التحرير!`, 'success');
+                            isPublishedConfirmed = true;
+                            break;
+                        }
+                    }
+                } catch (e) {}
             }
-        }
 
-        if (!isPublishedConfirmed) {
-            // محاولة نقر أخيرة طارئة قبل إعلان الفشل
-            const emergencyClicked = await page.evaluate(() => {
-                const submitBtn = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"], button[value="نشر"], button[value="Post"], button[value="POST"]');
-                if (submitBtn) { submitBtn.click(); return true; }
-                return false;
-            });
+            if (!isPublishedConfirmed && !isStage10TimedOut && (Date.now() - stage10StartTime <= MAX_STAGE10_DURATION)) {
+                // محاولة نقر أخيرة طارئة قبل إعلان الفشل
+                try {
+                    const emergencyClicked = await page.evaluate(() => {
+                        const submitBtn = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"], button[value="نشر"], button[value="Post"], button[value="POST"]');
+                        if (submitBtn) { submitBtn.click(); return true; }
+                        return false;
+                    });
 
-            if (emergencyClicked) {
-                await smartSleep(8000);
-                await logToDashboard(`🚀 [المرحلة 10] [${ACCOUNT_NAME}] تم تنفيذ نقرة الإرسال بنجاح!`, 'success');
-            } else {
-                await logToDashboard(`⚠️ [المرحلة 10] [${ACCOUNT_NAME}] تم النقر على النشر وإنهاء المعالجة.`, 'info');
+                    if (emergencyClicked) {
+                        await smartSleep(8000);
+                        await logToDashboard(`🚀 [المرحلة 10] [${ACCOUNT_NAME}] تم تنفيذ نقرة الإرسال بنجاح!`, 'success');
+                    } else {
+                        await logToDashboard(`⚠️ [المرحلة 10] [${ACCOUNT_NAME}] تم النقر على النشر وإنهاء المعالجة.`, 'info');
+                    }
+                } catch (e) {}
             }
-        }
 
-        let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
-        let finalWait = isUploadedVideo ? 25000 : 8000;
-        await smartSleep(finalWait); 
+            let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
+            let finalWait = isUploadedVideo ? 25000 : 8000;
+            await smartSleep(finalWait); 
+        };
+
+        // تغليف المرحلة 10 بـ Promise.race لضمان عدم التعليق نهائياً بعد 10 دقائق
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('STAGE10_TIMEOUT'), MAX_STAGE10_DURATION));
+        const stage10Result = await Promise.race([stage10Task(), timeoutPromise]);
+
+        if (stage10Result === 'STAGE10_TIMEOUT' || isStage10TimedOut || (Date.now() - stage10StartTime > MAX_STAGE10_DURATION)) {
+            await logToDashboard(`⏱️ [المرحلة 10] [${ACCOUNT_NAME}] انتهت مهلة الـ 10 دقائق المحددة لتأكيد المنشور دون الحصول على رد نهائي، إنهاء المرحلة بأمان...`, 'info');
+        }
     } finally {
         stopStageWatchdog();
     }
@@ -1529,13 +1528,13 @@ async function processOnePost(post) {
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (ad_video): ${mediaUrl}`, 'info');
     } else if (post.video_url && post.video_url.trim() !== '') {
         mediaUrl = post.video_url.trim();
-        isVideoPost = true; 
+        isVideoPost = true;
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (video_url): ${mediaUrl}`, 'info');
     } else if (post.ad_image && post.ad_image.trim() !== '') {
         mediaUrl = post.ad_image.trim();
         const lowerImg = mediaUrl.toLowerCase();
         if (lowerImg.includes('.mp4') || lowerImg.includes('.mov') || lowerImg.includes('.webm') || lowerImg.includes('.mkv') || lowerImg.includes('.avi')) {
-            isVideoPost = true; 
+            isVideoPost = true;
             await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو عبر حقل الصورة (ad_image): ${mediaUrl}`, 'info');
         } else {
             await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد رابط صورة في السوبيس (ad_image): ${mediaUrl}`, 'info');
